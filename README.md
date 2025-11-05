@@ -12,6 +12,8 @@ This project serves multiple educational purposes:
 - Building secure and atomic transaction execution systems
 - Gaining hands-on experience with web3 libraries and blockchain APIs
 
+This project uses the Bookmark extension to find functions more easily
+
 # The Protocol
 - Data Collection Phase
 
