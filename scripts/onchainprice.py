@@ -16,12 +16,16 @@ import sqlite3
 import os
 from dotenv import load_dotenv
 from tokens import ALL_TOKENS, get_token_address
+import asyncio
+import eth_abi
 
 load_dotenv(r"C:\Users\telem\Desktop\Rabby\.env", encoding='latin-1')
 
 ##############################################################################################################################################################
 # CONFIGURATION GLOBALE ET CONSTANTES
 ##############################################################################################################################################################
+
+MEMPOOL_SURVEILLANCE_ENABLED = False
 
 ACTUAL_PRICES = {}
 
@@ -84,11 +88,22 @@ UNISWAP_V3_QUOTER_ADDRESS = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
 CURVE_REGISTRY_ADDRESS = "0x0000000022D53366457F9d5E68Ec105046FC4383"
 BALANCER_VAULT_ADDRESS = "0xBA12222222228d8Ba445958a75a0704d566BF2C8" # à implémenter
 
-# Subgraph endpoints (can be overridden with environment variables)
 UNISWAP_V2 = os.getenv('UNISWAP_V2')
 UNISWAP_V3 = os.getenv('UNISWAP_V3')
 SUSHISWAP = os.getenv('SUSHISWAP')
 CURVE = os.getenv('CURVE')
+
+# Contracts Curve principaux (adresse => nom)
+CURVE_POOLS = {
+    '0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7': '3pool (USDT/USDC/DAI)',
+    '0xDC24316b9AE028F1497c275EB9192a3Ea0f67022': 'stETH/ETH',
+    '0xD51a44d3FaE010294C616388b506AcdA1bfAAE46': 'Tricrypto2',
+    '0xDcEF968d416a41Cdac0ED8702fAC8128A64241A2': 'FRAX/USDC',
+    '0xA5407eAE9Ba41422680e2e00537571bcC53efBfD': 'sUSD',
+    '0x06364f10B501e868329afBc005b3492902d6C763': 'PAX',
+}
+
+WATCH_TOKENS = []
 
 # Adresse du contrat Multicall3 (déployé sur Ethereum mainnet) - env override
 MULTICALL3_ADDRESS = os.getenv('MULTICALL3_ADDRESS', "0xcA11bde05977b3631167028862bE2a173976CA11")
@@ -2502,6 +2517,14 @@ def monitor_pools_continuously(interval_seconds: int = INTERVAL_PAUSE, max_itera
     # Trier par volume total
     common_pairs.sort(key=lambda x: x.get("v2_volume_usd", 0) + x.get("v3_volume_usd", 0) + x.get("sushi_volume_usd", 0) + x.get("curve_volume_usd", 0), reverse=True)
     
+    for pair in common_pairs:
+        if pair["token0"] not in WATCH_TOKENS:
+            WATCH_TOKENS.append(pair["token0"])
+        elif pair["token1"] not in WATCH_TOKENS:
+            WATCH_TOKENS.append(pair["token1"])
+        else:
+            continue
+
     print(f"\nPaires comparables identifiées: {len(common_pairs)} ({len(pool_addresses)} pools)")
     print()
     print("=" * 80)
@@ -4143,48 +4166,6 @@ def format_balance_report(balance_check: dict, cost_estimate: dict = None) -> st
     return "\n".join(report)
 
 #############################################################################################################################################################
-# MAIN
-#############################################################################################################################################################
-
-if __name__ == "__main__":
-    # Vérifier si le contrat existe déjà
-    contract_address = None
-    if os.path.exists('contract_address.txt'):
-        with open('contract_address.txt', 'r') as f:
-            contract_address = f.read().strip()
-        print(f" Contrat existant trouvé: {contract_address}")
-        
-        # Vérifier qu'il existe sur la blockchain
-        w3 = get_web3()
-        code = w3.eth.get_code(Web3.to_checksum_address(contract_address))
-        if code == b'' or code == b'0x':
-            print(" Le contrat n'existe plus à cette adresse, redéploiement...")
-            contract_address = None
-    # Déployer seulement si nécessaire
-    if contract_address is None:
-        get_web3()
-        print("\n Compilation et déploiement du contrat...")
-        abi, bytecode = compile_contract()
-        contract_address = deploy_contract(abi, bytecode)
-        
-        if contract_address is None:
-            print(" Déploiement échoué, arrêt du programme")
-            exit(1)
-    # Mettre à jour la variable globale
-    CONTRACT_ADDRESS = contract_address
-    
-    try:
-        inspect_my_wallet() 
-        monitor_pools_continuously(interval_seconds=INTERVAL_PAUSE, max_iterations=10)
-
-    except KeyboardInterrupt:
-        print("\n\nArrêt du programme.")
-    except Exception as e:
-        print(f"\nErreur: {e}")
-        import traceback
-        traceback.print_exc()
-
-#############################################################################################################################################################
 # FONCTIONS DE TEST
 #############################################################################################################################################################
 
@@ -4252,3 +4233,588 @@ def simulate_arbitrage_profit(opportunity: Dict) -> float:
     profit_formatted = profit / (10 ** decimals)
     
     return profit_formatted
+
+#############################################################################################################################################################
+# DEFINITION DES METHODES POUR ECOUTE DU MEMPOOL
+#############################################################################################################################################################
+
+# Pour une écoute du mempool, il nous faut utiliser un websocket cette fois ( on n'appelle plus les résultats mais on les recoit au fur et à mesure )
+url_ws = 'wss://mainnet.infura.io/ws/v3/YOUR-PROJECT-ID'
+
+UNISWAP_V3_METHODS = {
+    '0x414bf389': 'exactInputSingle',
+    '0xc04b8d59': 'exactInput',
+    '0xdb3e2198': 'exactOutputSingle',
+    '0xf28c0498': 'exactOutput',
+    '0xac9650d8': 'multicall',
+    '0x5ae401dc': 'multicall'
+}
+
+# SushiSwap V2
+SUSHISWAP_V2_METHODS = {
+    '0x38ed1739': 'swapExactTokensForTokens',
+    '0x8803dbee': 'swapTokensForExactTokens',
+    '0x7ff36ab5': 'swapExactETHForTokens',
+    '0x18cbafe5': 'swapTokensForExactETH',
+    '0x4a25d94a': 'swapExactTokensForETH',
+    '0xfb3bdb41': 'swapETHForExactTokens',
+    '0x791ac947': 'swapExactTokensForETHSupportingFeeOnTransferTokens',
+    '0xb6f9de95': 'swapExactETHForTokensSupportingFeeOnTransferTokens'
+}
+
+# Curve
+CURVE_METHODS = {
+    '0x3df02124': 'exchange',
+    '0xa6417ed6': 'exchange_underlying',
+    '0x5b41b908': 'exchange',
+    '0x394747c5': 'exchange',
+}
+
+def decode_uniswap_v3_exact_input_single(input_data):
+    """
+    Décoder exactInputSingle(
+        address tokenIn,
+        address tokenOut,
+        uint24 fee,
+        address recipient,
+        uint256 deadline,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        uint160 sqrtPriceLimitX96
+    )
+    """
+    params = input_data[10:]
+    types = ['address', 'address', 'uint24', 'address', 'uint256', 'uint256', 'uint256', 'uint160']
+    decoded = w3.codec.decode(types, bytes.fromhex(params))
+    
+    return {
+        'dex': 'Uniswap V3',
+        'type': 'exactInputSingle',
+        'tokenIn': decoded[0],
+        'tokenOut': decoded[1],
+        'fee': decoded[2],
+        'recipient': decoded[3],
+        'deadline': decoded[4],
+        'amountIn': decoded[5],
+        'amountOutMinimum': decoded[6],
+        'sqrtPriceLimitX96': decoded[7]
+    }
+
+def decode_uniswap_v3_exact_input(input_data):
+    """
+    Décoder exactInput(
+        bytes path,
+        address recipient,
+        uint256 deadline,
+        uint256 amountIn,
+        uint256 amountOutMinimum
+    )
+    """
+    params = input_data[10:]
+    types = ['bytes', 'address', 'uint256', 'uint256', 'uint256']
+    decoded = w3.codec.decode(types, bytes.fromhex(params))
+    
+    return {
+        'dex': 'Uniswap V3',
+        'type': 'exactInput',
+        'path': decoded[0].hex(),
+        'recipient': decoded[1],
+        'deadline': decoded[2],
+        'amountIn': decoded[3],
+        'amountOutMinimum': decoded[4]
+    }
+
+def decode_uniswap_v3_path(path_hex):
+    """
+    Décoder le path Uniswap V3
+    Format: token0 (20 bytes) + fee (3 bytes) + token1 (20 bytes) + ...
+    """
+    if path_hex.startswith('0x'):
+        path_hex = path_hex[2:]
+    
+    tokens = []
+    fees = []
+    position = 0
+    
+    while position < len(path_hex):
+        token = '0x' + path_hex[position:position + 40]
+        tokens.append(Web3.to_checksum_address(token))
+        position += 40
+        
+        if position < len(path_hex):
+            fee = int(path_hex[position:position + 6], 16)
+            fees.append(fee)
+            position += 6
+    
+    return tokens, fees
+
+def decode_sushiswap_v2(input_data, method_id, tx_value):
+    """Décoder les swaps SushiSwap V2"""
+    params = input_data[10:]
+    
+    # swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline)
+    if method_id == '0x38ed1739':
+        types = ['uint256', 'uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapExactTokensForTokens',
+            'amountIn': decoded[0],
+            'amountOutMin': decoded[1],
+            'path': decoded[2],
+            'to': decoded[3],
+            'deadline': decoded[4]
+        }
+    
+    # swapExactETHForTokens(uint amountOutMin, address[] path, address to, uint deadline)
+    elif method_id == '0x7ff36ab5':
+        types = ['uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapExactETHForTokens',
+            'amountIn': tx_value,
+            'amountOutMin': decoded[0],
+            'path': decoded[1],
+            'to': decoded[2],
+            'deadline': decoded[3]
+        }
+    
+    # swapTokensForExactTokens(uint amountOut, uint amountInMax, address[] path, address to, uint deadline)
+    elif method_id == '0x8803dbee':
+        types = ['uint256', 'uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapTokensForExactTokens',
+            'amountOut': decoded[0],
+            'amountInMax': decoded[1],
+            'path': decoded[2],
+            'to': decoded[3],
+            'deadline': decoded[4]
+        }
+    
+    # swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline)
+    elif method_id == '0x4a25d94a':
+        types = ['uint256', 'uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapExactTokensForETH',
+            'amountIn': decoded[0],
+            'amountOutMin': decoded[1],
+            'path': decoded[2],
+            'to': decoded[3],
+            'deadline': decoded[4]
+        }
+    
+    # swapTokensForExactETH(uint amountOut, uint amountInMax, address[] path, address to, uint deadline)
+    elif method_id == '0x18cbafe5':
+        types = ['uint256', 'uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapTokensForExactETH',
+            'amountOut': decoded[0],
+            'amountInMax': decoded[1],
+            'path': decoded[2],
+            'to': decoded[3],
+            'deadline': decoded[4]
+        }
+    
+    # swapETHForExactTokens(uint amountOut, address[] path, address to, uint deadline)
+    elif method_id == '0xfb3bdb41':
+        types = ['uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapETHForExactTokens',
+            'amountOut': decoded[0],
+            'path': decoded[1],
+            'to': decoded[2],
+            'deadline': decoded[3],
+            'amountInMax': tx_value
+        }
+    
+    # swapExactTokensForETHSupportingFeeOnTransferTokens
+    elif method_id == '0x791ac947':
+        types = ['uint256', 'uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapExactTokensForETH (FeeOnTransfer)',
+            'amountIn': decoded[0],
+            'amountOutMin': decoded[1],
+            'path': decoded[2],
+            'to': decoded[3],
+            'deadline': decoded[4]
+        }
+    
+    # swapExactETHForTokensSupportingFeeOnTransferTokens
+    elif method_id == '0xb6f9de95':
+        types = ['uint256', 'address[]', 'address', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'SushiSwap V2',
+            'type': 'swapExactETHForTokens (FeeOnTransfer)',
+            'amountIn': tx_value,
+            'amountOutMin': decoded[0],
+            'path': decoded[1],
+            'to': decoded[2],
+            'deadline': decoded[3]
+        }
+    
+    return None
+
+def decode_curve(input_data, method_id):
+    """Décoder les swaps Curve"""
+    params = input_data[10:]
+    
+    # exchange(int128 i, int128 j, uint256 dx, uint256 min_dy)
+    if method_id == '0x3df02124':
+        types = ['int128', 'int128', 'uint256', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'Curve',
+            'type': 'exchange',
+            'i': decoded[0],
+            'j': decoded[1],
+            'dx': decoded[2],
+            'min_dy': decoded[3]
+        }
+    
+    # exchange_underlying(int128 i, int128 j, uint256 dx, uint256 min_dy)
+    elif method_id == '0xa6417ed6':
+        types = ['int128', 'int128', 'uint256', 'uint256']
+        decoded = w3.codec.decode(types, bytes.fromhex(params))
+        return {
+            'dex': 'Curve',
+            'type': 'exchange_underlying',
+            'i': decoded[0],
+            'j': decoded[1],
+            'dx': decoded[2],
+            'min_dy': decoded[3]
+        }
+    
+    # Variante avec address
+    elif method_id in ['0x5b41b908', '0x394747c5']:
+        try:
+            types = ['address', 'address', 'uint256', 'uint256']
+            decoded = w3.codec.decode(types, bytes.fromhex(params))
+            return {
+                'dex': 'Curve',
+                'type': 'exchange_with_address',
+                'token_in': decoded[0],
+                'token_out': decoded[1],
+                'amount_in': decoded[2],
+                'min_amount_out': decoded[3]
+            }
+        except:
+            # Si ça échoue, essayer le format classique
+            types = ['int128', 'int128', 'uint256', 'uint256']
+            decoded = w3.codec.decode(types, bytes.fromhex(params))
+            return {
+                'dex': 'Curve',
+                'type': 'exchange',
+                'i': decoded[0],
+                'j': decoded[1],
+                'dx': decoded[2],
+                'min_dy': decoded[3]
+            }
+    
+    return None
+
+def get_curve_pool_tokens(pool_address):
+    """Mapping des tokens pour les pools Curve courants"""
+    pool_tokens = {
+        '0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7': [  # 3pool
+            ALL_TOKENS['DAI'],
+            ALL_TOKENS['USDC'],
+            ALL_TOKENS['USDT']
+        ],
+        '0xdc24316b9ae028f1497c275eb9192a3ea0f67022': [  # stETH
+            '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',  # stETH
+            ALL_TOKENS['WETH']
+        ],
+        '0xd51a44d3fae010294c616388b506acda1bfaae46': [  # Tricrypto2
+            ALL_TOKENS['USDT'],
+            ALL_TOKENS['WBTC'],
+            ALL_TOKENS['WETH']
+        ],
+    }
+    return pool_tokens.get(pool_address.lower(), [])
+
+def format_amount(amount, decimals=18):
+    """Formater un montant de token"""
+    if amount == 0:
+        return "0"
+    return f"{amount / (10 ** decimals):.6f}"
+
+def get_uniswap_v3_fee_description(fee):
+    """Description du fee tier Uniswap V3"""
+    fee_tiers = {
+        100: '0.01% (Très stable)',
+        500: '0.05% (Stablecoins)',
+        3000: '0.3% (Standard)',
+        10000: '1% (Exotique)'
+    }
+    return fee_tiers.get(fee, f'{fee / 10000}%')
+
+def shorten_address(address):
+    """Raccourcir une adresse"""
+    if not address:
+        return ""
+    return f"{address[:6]}...{address[-4:]}"
+
+def get_token_name(address):
+    """Obtenir le nom du token s'il est connu"""
+    for name, addr in ALL_TOKENS.items():
+        if addr.lower() == address.lower():
+            return name
+    return shorten_address(address)
+
+###############################################################################################################################################################
+# FONCTIONS D'AFFICHAGE DES SWAPS DÉCODÉS
+###############################################################################################################################################################
+
+def display_uniswap_v3_swap(tx, decoded):
+    """Afficher un swap Uniswap V3"""
+    print("\n" + "="*70)
+    print(f" UNISWAP V3 - {decoded['type']}")
+    print("="*70)
+    print(f"Hash:      {tx.hash.hex()}")
+    print(f"From:      {tx['from']}")
+    print(f"Gas Price: {web3.from_wei(tx['gasPrice'], 'gwei'):.2f} Gwei")
+    print(f"Time:      {datetime.now().strftime('%H:%M:%S')}")
+    
+    if decoded['type'] == 'exactInputSingle':
+        print(f"\n Swap Simple")
+        print(f"Token In:  {get_token_name(decoded['tokenIn'])} ({shorten_address(decoded['tokenIn'])})")
+        print(f"Token Out: {get_token_name(decoded['tokenOut'])} ({shorten_address(decoded['tokenOut'])})")
+        print(f"Fee Tier:  {get_uniswap_v3_fee_description(decoded['fee'])}")
+        print(f"Amount In: {format_amount(decoded['amountIn'])}")
+        print(f"Min Out:   {format_amount(decoded['amountOutMinimum'])}")
+        
+        # Calculer le slippage approximatif
+        if decoded['amountIn'] > 0 and decoded['amountOutMinimum'] > 0:
+            ratio = decoded['amountOutMinimum'] / decoded['amountIn']
+            print(f"Ratio:     {ratio:.6f}")
+    
+    elif decoded['type'] == 'exactInput':
+        tokens, fees = decode_uniswap_v3_path(decoded['path'])
+        print(f"\n Swap Multi-hop ({len(tokens)} tokens)")
+        
+        route = " → ".join([get_token_name(t) for t in tokens])
+        print(f"Route:     {route}")
+        
+        fee_desc = " → ".join([get_uniswap_v3_fee_description(f) for f in fees])
+        print(f"Fees:      {fee_desc}")
+        
+        print(f"Amount In: {format_amount(decoded['amountIn'])}")
+        print(f"Min Out:   {format_amount(decoded['amountOutMinimum'])}")
+
+def display_sushiswap_v2_swap(tx, decoded):
+    """Afficher un swap SushiSwap V2"""
+    print("\n" + "="*70)
+    print(f" SUSHISWAP V2 - {decoded['type']}")
+    print("="*70)
+    print(f"Hash:      {tx.hash.hex()}")
+    print(f"From:      {tx['from']}")
+    print(f"Gas Price: {web3.from_wei(tx['gasPrice'], 'gwei'):.2f} Gwei")
+    print(f"Time:      {datetime.now().strftime('%H:%M:%S')}")
+    
+    if 'path' in decoded:
+        route = " → ".join([get_token_name(t) for t in decoded['path']])
+        print(f"\n Route:  {route}")
+    
+    # Afficher les montants selon le type de swap
+    if 'amountIn' in decoded and decoded['amountIn'] > 0:
+        if isinstance(decoded['amountIn'], int):
+            print(f"Amount In: {format_amount(decoded['amountIn'])}")
+        else:
+            print(f"Amount In: {web3.from_wei(decoded['amountIn'], 'ether'):.6f} ETH")
+    
+    if 'amountOutMin' in decoded:
+        print(f"Min Out:   {format_amount(decoded['amountOutMin'])}")
+    
+    if 'amountOut' in decoded:
+        print(f"Exact Out: {format_amount(decoded['amountOut'])}")
+    
+    if 'amountInMax' in decoded:
+        if isinstance(decoded['amountInMax'], int) and decoded['amountInMax'] > 10**18:
+            print(f"Max In:    {format_amount(decoded['amountInMax'])}")
+        else:
+            print(f"Max In:    {web3.from_wei(decoded['amountInMax'], 'ether'):.6f} ETH")
+    
+    if 'to' in decoded:
+        print(f"Recipient: {shorten_address(decoded['to'])}")
+
+def display_curve_swap(tx, decoded, pool_name):
+    """Afficher un swap Curve"""
+    print("\n" + "="*70)
+    print(f" CURVE - {pool_name}")
+    print("="*70)
+    print(f"Hash:      {tx.hash.hex()}")
+    print(f"From:      {tx['from']}")
+    print(f"Gas Price: {web3.from_wei(tx['gasPrice'], 'gwei'):.2f} Gwei")
+    print(f"Time:      {datetime.now().strftime('%H:%M:%S')}")
+    print(f"Type:      {decoded['type']}")
+    
+    pool_tokens = get_curve_pool_tokens(tx['to'])
+    
+    if decoded['type'] in ['exchange', 'exchange_underlying']:
+        i = decoded['i']
+        j = decoded['j']
+        
+        print(f"\n Swap")
+        if pool_tokens and i < len(pool_tokens) and j < len(pool_tokens):
+            token_in = get_token_name(pool_tokens[i])
+            token_out = get_token_name(pool_tokens[j])
+            print(f"From:      Token {i} ({token_in})")
+            print(f"To:        Token {j} ({token_out})")
+        else:
+            print(f"From:      Token index {i}")
+            print(f"To:        Token index {j}")
+        
+        print(f"Amount In: {format_amount(decoded['dx'])}")
+        print(f"Min Out:   {format_amount(decoded['min_dy'])}")
+    
+    elif decoded['type'] == 'exchange_with_address':
+        print(f"\n Swap")
+        print(f"Token In:  {get_token_name(decoded['token_in'])}")
+        print(f"Token Out: {get_token_name(decoded['token_out'])}")
+        print(f"Amount In: {format_amount(decoded['amount_in'])}")
+        print(f"Min Out:   {format_amount(decoded['min_amount_out'])}")
+
+###############################################################################################################
+# GESTION DES TRANSACTIONS DU MEMPOOL
+###############################################################################################################
+
+async def handle_transaction(tx_hash):
+    """Traiter une transaction du mempool"""
+    try:
+        tx = web3.eth.get_transaction(tx_hash)
+        
+        if not tx or not tx['to']:
+            return
+        
+        to_address = tx['to'].lower()
+        input_data = tx['input'].hex()
+        
+        if len(input_data) < 10:
+            return
+        
+        method_id = input_data[:10]
+        
+        #  UNISWAP V3
+        if to_address in [r.lower() for r in UNISWAP_V3_ROUTER.keys()]:
+            method_name = UNISWAP_V3_METHODS.get(method_id)
+            if not method_name:
+                return
+            
+            decoded = None
+            
+            if method_id == '0x414bf389':  # exactInputSingle
+                decoded = decode_uniswap_v3_exact_input_single(input_data)
+            elif method_id == '0xc04b8d59':  # exactInput
+                decoded = decode_uniswap_v3_exact_input(input_data)
+            
+            if decoded:
+                display_uniswap_v3_swap(tx, decoded)
+        
+        #  SUSHISWAP V2
+        elif to_address == SUSHISWAP_ROUTER_ADDRESS.lower():
+            method_name = SUSHISWAP_V2_METHODS.get(method_id)
+            if not method_name:
+                return
+            
+            decoded = decode_sushiswap_v2(input_data, method_id, tx['value'])
+            
+            if decoded:
+                display_sushiswap_v2_swap(tx, decoded)
+        
+        #  CURVE 
+        elif to_address in [p.lower() for p in CURVE_POOLS.keys()]:
+            method_name = CURVE_METHODS.get(method_id)
+            if not method_name:
+                return
+            
+            pool_name = CURVE_POOLS.get(tx['to'])
+            decoded = decode_curve(input_data, method_id)
+            
+            if decoded:
+                display_curve_swap(tx, decoded, pool_name)
+        
+    except Exception as e:
+        print(f"Erreur: {e}")
+        pass
+
+
+async def log_loop(event_filter, poll_interval):
+    """Boucle d'écoute du mempool"""
+    while True:
+        try:
+            for tx_hash in event_filter.get_new_entries():
+                await handle_transaction(tx_hash)
+            await asyncio.sleep(poll_interval)
+        except Exception as e:
+            print(f"Erreur dans la boucle: {e}")
+            await asyncio.sleep(poll_interval)
+
+#############################################################################################################################################################
+# MAIN
+#############################################################################################################################################################
+
+if __name__ == "__main__":
+    # Vérifier si le contrat existe déjà
+    contract_address = None
+    if os.path.exists('contract_address.txt'):
+        with open('contract_address.txt', 'r') as f:
+            contract_address = f.read().strip()
+        print(f" Contrat existant trouvé: {contract_address}")
+        
+        # Vérifier qu'il existe sur la blockchain
+        w3 = get_web3()
+        code = w3.eth.get_code(Web3.to_checksum_address(contract_address))
+        if code == b'' or code == b'0x':
+            print(" Le contrat n'existe plus à cette adresse, redéploiement...")
+            contract_address = None
+
+    # Déployer seulement si nécessaire
+    if contract_address is None:
+        get_web3()
+        print("\n Compilation et déploiement du contrat...")
+        abi, bytecode = compile_contract()
+        contract_address = deploy_contract(abi, bytecode)
+        
+        if contract_address is None:
+            print(" Déploiement échoué, arrêt du programme")
+            exit(1)
+    # Mettre à jour la variable globale
+    CONTRACT_ADDRESS = contract_address
+
+    if  MEMPOOL_SURVEILLANCE_ENABLED:
+        # Créer le filtre pour les transactions pendantes
+        pending_filter = web3.eth.filter('pending')
+        
+        # Lancer la boucle
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(log_loop(pending_filter, 0.5))
+        except KeyboardInterrupt:
+            print("\n\n" + "="*70)
+            print("👋 Arrêt du programme...")
+            print("="*70)
+        finally:
+            loop.close()
+    
+    try:
+        inspect_my_wallet() 
+        monitor_pools_continuously(interval_seconds=INTERVAL_PAUSE, max_iterations=10)
+
+    except KeyboardInterrupt:
+        print("\n\nArrêt du programme.")
+    except Exception as e:
+        print(f"\nErreur: {e}")
+        import traceback
+        traceback.print_exc()
