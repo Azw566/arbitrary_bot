@@ -13,8 +13,6 @@ import base64
 from decimal import Decimal
 from datetime import datetime
 import sqlite3
-
-# Load environment variables from a local .env file if present
 import os
 from dotenv import load_dotenv
 from tokens import ALL_TOKENS, get_token_address
