@@ -118,6 +118,7 @@ execution:
   slippage_tolerance_pct: 0.5 # Maximum acceptable slippage %
   max_concurrent: 3           # Max simultaneous trade executions across all pairs
   max_queue_age_seconds: 10   # Drop queued opportunities older than this
+  trade_size_usd: 10000       # Assumed trade size used to compute gas cost as a % of profit
 
 # ============================================================
 # Database  (optional — set enabled: true and fill .env)

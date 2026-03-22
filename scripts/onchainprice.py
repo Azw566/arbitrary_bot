@@ -2684,14 +2684,15 @@ def monitor_pools_continuously(interval_seconds: int = INTERVAL_PAUSE, max_itera
 # FONCTION DÉTECTION D'OPPORTUNITÉS D'ARBITRAGE (RÉUTILISABLE)
 ##############################################################################################################################################################################
 
-def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percentage: float = PROFIT_NET) -> List[Dict]:
+def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percentage: float = PROFIT_NET, gas_cost_pct: float = 0.0) -> List[Dict]:
     """
     Trouve les opportunités d'arbitrage entre les pools
-    
+
     Args:
         pool_data_list: Liste des données de pools
         min_profit_percentage: Profit net minimum requis (en %)
-    
+        gas_cost_pct: Coût du gas en % du trade (soustrait du profit net)
+
     Returns:
         Liste des opportunités d'arbitrage détectées
     """
@@ -2723,8 +2724,8 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
         fee1 = min_price_pool.get('fee_percentage', min_price_pool.get('fee_tier', 3000) / 10000)
         fee2 = max_price_pool.get('fee_percentage', max_price_pool.get('fee_tier', 3000) / 10000)
         total_fees = fee1 + fee2
-        net_profit = percentage_diff - total_fees
-        
+        net_profit = percentage_diff - total_fees - gas_cost_pct
+
         if net_profit > min_profit_percentage:
             opportunities.append({
                 'pair': pair,
@@ -2732,7 +2733,8 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
                 'sell_pool': max_price_pool,
                 'gross_profit_percentage': percentage_diff,
                 'total_fees_percentage': total_fees,
-                'net_profit_percentage': net_profit
+                'gas_cost_pct': round(gas_cost_pct, 4),
+                'net_profit_percentage': round(net_profit, 6),
             })
     
     # Trier par profit net décroissant
