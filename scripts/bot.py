@@ -186,7 +186,7 @@ class Bot:
                         iteration, len(pool_data), enqueued, elapsed,
                     )
                 else:
-                    logger.debug(
+                    logger.info(
                         "[iter %d] %d pools | no opportunities | %.2fs",
                         iteration, len(pool_data), elapsed,
                     )

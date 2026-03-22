@@ -22,18 +22,13 @@ pairs:
   # Each pair needs at least 2 pools on different DEXes to be monitored
   hardcoded_pools:
 
+    # ── High-volume anchors (kept for cross-comparison) ─────────────────────
     - pair: "WETH/USDC"
       pools:
         - { dex: UniV3, version: V3, address: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640" }  # 0.05%
         - { dex: UniV3, version: V3, address: "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8" }  # 0.30%
         - { dex: UniV2, version: V2, address: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc" }
         - { dex: Sushi, version: V2, address: "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0" }
-
-    - pair: "WETH/USDT"
-      pools:
-        - { dex: UniV3, version: V3, address: "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36" }  # 0.05%
-        - { dex: UniV2, version: V2, address: "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852" }
-        - { dex: Sushi, version: V2, address: "0x06da0fd433C1A5d7a4faa01111c044910A184553" }
 
     - pair: "WBTC/WETH"
       pools:
@@ -42,17 +37,12 @@ pairs:
         - { dex: UniV2, version: V2, address: "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940" }
         - { dex: Sushi, version: V2, address: "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58" }
 
-    - pair: "WETH/DAI"
+    # ── Mid-tier: less arbitraged, more likely to show spreads ──────────────
+    - pair: "UNI/WETH"
       pools:
-        - { dex: UniV3, version: V3, address: "0x60594a405d53811d3BC4766596EFD80fd545A270" }  # 0.05%
-        - { dex: UniV2, version: V2, address: "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11" }
-        - { dex: Sushi, version: V2, address: "0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f" }
-
-    - pair: "DAI/USDC"
-      pools:
-        - { dex: UniV3, version: V3, address: "0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168" }  # 0.01%
-        - { dex: UniV3, version: V3, address: "0x6c6Bc977E13Df9b0de53b251522280BB72383700" }  # 0.05%
-        - { dex: Curve, version: Curve, address: "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7" }  # 3pool
+        - { dex: UniV3, version: V3, address: "0x1d42064Fc4Beb5F8aAF85F4617AE8b3b5B8Bd801" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xd3d2E2692501A5c9Ca623199D38826e513033a17" }
+        - { dex: Sushi, version: V2, address: "0xDafd66636E2561b0284EDdE37e42d192F2844D40" }
 
     - pair: "LINK/WETH"
       pools:
@@ -60,11 +50,59 @@ pairs:
         - { dex: UniV2, version: V2, address: "0xa2107FA5B38d9bbd2C461D6EDf11B11A50F6b974" }
         - { dex: Sushi, version: V2, address: "0x167Dc49d6a85F06E57E40C7Cc4C99960Efa98e96" }
 
+    - pair: "MKR/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xe8c6c9227491C0a8156A0106A0204d881BB7E531" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xC2aDdA861F89bBB333c90c492cB837741916A225" }
+        - { dex: Sushi, version: V2, address: "0xBa13afEcda9beB75De5c56BbAF696b880a5A50dD" }
+
+    - pair: "AAVE/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x5aB53EE1d50eeF2C1DD3d5402789cd27bB52c1bB" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xDFC14d2Af169B0D36C4EFF567Ada9b2E0CAE044f" }
+        - { dex: Sushi, version: V2, address: "0xc76225124F3CaAb07f609b1D147a31de43926cd6" }
+
+    - pair: "CRV/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x919Fa96e88d67499339577Fa202345436dcDaf79" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x3dA1313aE46132A397D90d95B1424A9A7e3e0fCE" }
+        - { dex: Sushi, version: V2, address: "0x58Dc5a51fE44589BEb22E8CE67720B5BC5378009" }
+
+    - pair: "LDO/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xa3f558aebAecAf0e11cA4b2199cC5Ed341edfd74" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xC558F600B34A5f69dD2f0D06Cb8A88d829B7420a" }
+        - { dex: Sushi, version: V2, address: "0xFB30b47c47E2fAB74ca5b0c1561C2909b280c4E5" }
+
+    - pair: "SNX/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xA7f3FC32043757039d5e13d790EE43edBcBa8b7c" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x43AE24960e5534731Fc831386c07755A2dc33D47" }
+        - { dex: Sushi, version: V2, address: "0x016BEA32c38e12b3E6B99E1aCD7773eE4a70572A" }
+
+    - pair: "COMP/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xea4ba4ce14fdd287f380b55419b1c5b6c3f22ab6" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xCFfDdeD873554F362Ac02f8Fb1f02E5ada10516f" }
+        - { dex: Sushi, version: V2, address: "0x3212B29E33587A00FB1C83346f5dBFA69A458923" }
+
+    - pair: "SUSHI/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x87C7056BBE6084f03304196Be51c6B90B6d85Aa2" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xce84867c3c02B05dc570d0135103d3fB9CC19433" }
+        - { dex: Sushi, version: V2, address: "0x795065dCc9f64b5614C407a6EFDC400DA6221FB0" }
+
+    - pair: "BAL/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x3c0F58B76e57c88Fa834f5Dd9B90ceBB6Bc6eCd5" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xBA12222222228d8Ba445958a75a0704d566BF2C8" }  # note: Balancer vault
+        - { dex: Sushi, version: V2, address: "0x10B47177E92Ef9D5C6059055d92DdF6290848991" }
+
 # ============================================================
 # Monitoring
 # ============================================================
 monitoring:
-  interval_seconds: 2         # Delay between full scan iterations
+  interval_seconds: 1         # Delay between full scan iterations
   batch_size: 100             # Pools per Multicall3 batch (reduce if RPC times out)
   max_workers: 8              # Thread pool size for blocking web3 calls
 
@@ -74,7 +112,7 @@ monitoring:
 execution:
   dry_run: true               # true = log only | false = send real on-chain transactions
   strategy: "two_way"         # Active strategy: two_way | triangular | flash_loan
-  min_profit_pct: 0.5         # Minimum net profit % required to trigger execution
+  min_profit_pct: 0.05        # Minimum net profit % required to trigger execution
   max_gas_gwei: 50            # Skip execution if gas price exceeds this (gwei)
   gas_reserve_eth: 0.05       # ETH kept aside for gas costs
   slippage_tolerance_pct: 0.5 # Maximum acceptable slippage %

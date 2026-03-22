@@ -2718,9 +2718,11 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
         percentage_diff = (price_diff / min_price_pool['price_0_in_1']) * 100
         
         # Calculer les fees combinés
-        fee1 = min_price_pool.get('fee_tier', 3000) / 10000
-        fee2 = max_price_pool.get('fee_tier', 3000) / 10000
-        total_fees = (fee1 + fee2) * 100
+        # fee_percentage is already in % form (e.g. 0.3 = 0.3%)
+        # fall back to fee_tier / 10000 which is also in % form
+        fee1 = min_price_pool.get('fee_percentage', min_price_pool.get('fee_tier', 3000) / 10000)
+        fee2 = max_price_pool.get('fee_percentage', max_price_pool.get('fee_tier', 3000) / 10000)
+        total_fees = fee1 + fee2
         net_profit = percentage_diff - total_fees
         
         if net_profit > min_profit_percentage:
