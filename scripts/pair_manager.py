@@ -39,11 +39,66 @@ class PairManager:
 
     def discover_pairs(self) -> List[dict]:
         """
-        Fetches top pairs from all DEXes, merges them, applies filters,
-        and builds the internal pool index.  Runs once at startup.
-
-        Returns a list of pair dicts sorted by total volume (descending).
+        Entry point for pair discovery. Delegates to the correct mode:
+          - hardcoded : load pools directly from config (no external calls)
+          - auto      : discover from subgraphs (requires Graph API)
+          - manual    : same as auto but filtered by whitelist
         """
+        mode = self.config["pairs"].get("mode", "auto")
+        if mode == "hardcoded":
+            return self._load_hardcoded_pairs()
+        return self._discover_from_subgraphs()
+
+    # ------------------------------------------------------------------
+    # Hardcoded mode — reads pool list directly from config.yaml
+    # ------------------------------------------------------------------
+
+    def _load_hardcoded_pairs(self) -> List[dict]:
+        cfg        = self.config["pairs"]
+        raw_pairs  = cfg.get("hardcoded_pools") or []
+        blacklist  = {s.upper() for s in cfg.get("blacklist") or []}
+
+        common_pairs: List[dict] = []
+
+        for entry in raw_pairs:
+            name  = entry.get("pair", "UNKNOWN")
+            pools = [
+                self._pool_entry(
+                    p["dex"], p["version"], p["address"], volume_usd=0
+                )
+                for p in entry.get("pools", [])
+            ]
+
+            if len(pools) < 2:
+                logger.warning("Skipping %s — needs ≥2 pools for arbitrage", name)
+                continue
+
+            if name.upper() in blacklist:
+                logger.info("Skipping blacklisted pair: %s", name)
+                continue
+
+            common_pairs.append({
+                "key":             name,
+                "name":            name,
+                "token0":          None,   # resolved on-chain by batch_get_pool_data
+                "token1":          None,
+                "pools":           pools,
+                "total_volume_usd": 0,
+            })
+
+        logger.info(
+            "Loaded %d hardcoded pairs (%d pool addresses)",
+            len(common_pairs),
+            sum(len(p["pools"]) for p in common_pairs),
+        )
+        self._build_indexes(common_pairs)
+        return common_pairs
+
+    # ------------------------------------------------------------------
+    # Auto / manual mode — discovers from subgraphs
+    # ------------------------------------------------------------------
+
+    def _discover_from_subgraphs(self) -> List[dict]:
         from onchainprice import (
             get_top_pairs_v2,
             get_top_pairs_v3,
@@ -57,7 +112,7 @@ class PairManager:
         )
 
         cfg = self.config["pairs"]
-        nb = cfg.get("max_pairs", 50)
+        nb  = cfg.get("max_pairs", 50)
 
         logger.info("Fetching top pairs from all DEXes (limit=%d each)…", nb)
 
@@ -70,7 +125,6 @@ class PairManager:
             curve_pairs, UNISWAP_V2, UNISWAP_V3, SUSHISWAP
         )
 
-        # Build normalised-key → pair maps, deduplicating
         v2_map    = {normalize_pair(p): p for p in v2_pairs}
         v3_map    = {normalize_pair(p): p for p in v3_pairs}
         sushi_map = {normalize_pair(p): p for p in sushi_pairs}
@@ -83,11 +137,10 @@ class PairManager:
         for p in sushi_from_curve:
             sushi_map.setdefault(normalize_pair(p), p)
 
-        all_keys = set(v2_map) | set(v3_map) | set(sushi_map) | set(curve_map)
-
-        blacklist = {s.upper() for s in cfg.get("blacklist") or []}
-        whitelist = {s.upper() for s in cfg.get("whitelist") or []}
-        manual_mode = cfg.get("mode", "auto") == "manual"
+        all_keys   = set(v2_map) | set(v3_map) | set(sushi_map) | set(curve_map)
+        blacklist  = {s.upper() for s in cfg.get("blacklist") or []}
+        whitelist  = {s.upper() for s in cfg.get("whitelist") or []}
+        manual     = cfg.get("mode", "auto") == "manual"
 
         common_pairs: List[dict] = []
 
@@ -99,62 +152,45 @@ class PairManager:
                 p = v2_map[key]
                 pair_name = pair_name or f"{p['symbol0']}/{p['symbol1']}"
                 pools.append(self._pool_entry("UniV2", "V2", p["pair_id"], p.get("volume_usd", 0)))
-
             if key in v3_map:
                 p = v3_map[key]
                 pair_name = pair_name or f"{p['symbol0']}/{p['symbol1']}"
                 pools.append(self._pool_entry("UniV3", "V3", p["pair_id"], p.get("volume_usd", 0)))
-
             if key in sushi_map:
                 p = sushi_map[key]
                 pair_name = pair_name or f"{p['symbol0']}/{p['symbol1']}"
                 pools.append(self._pool_entry("Sushi", "V2", p["pair_id"], p.get("volume_usd", 0)))
-
             if key in curve_map:
                 p = curve_map[key]
                 pools.append(self._pool_entry("Curve", "Curve", p["pair_id"], p.get("volume_usd", 0)))
 
-            # Need ≥ 2 DEXes to have an arbitrage opportunity
             if len(pools) < 2:
                 continue
 
             label = (pair_name or f"{str(key[0])[:6]}/{str(key[1])[:6]}").upper()
-
             if label in blacklist:
                 continue
-            if manual_mode and whitelist and label not in whitelist:
+            if manual and whitelist and label not in whitelist:
                 continue
 
             common_pairs.append({
-                "key":    key,
-                "name":   pair_name or label,
-                "token0": key[0],
-                "token1": key[1],
-                "pools":  pools,
+                "key":             key,
+                "name":            pair_name or label,
+                "token0":          key[0],
+                "token1":          key[1],
+                "pools":           pools,
                 "total_volume_usd": sum(p["volume_usd"] for p in pools),
             })
 
-        # Sort best-liquidity pairs first
         common_pairs.sort(key=lambda x: x["total_volume_usd"], reverse=True)
-        common_pairs = common_pairs[: nb]
+        common_pairs = common_pairs[:nb]
 
-        logger.info("Discovered %d tradeable pairs (%d pool addresses)",
-                    len(common_pairs),
-                    sum(len(p["pools"]) for p in common_pairs))
-
-        # Build internal indexes
-        self.pairs = {p["name"]: p for p in common_pairs}
-        self.pool_addresses = [
-            pool["address"]
-            for pair in common_pairs
-            for pool in pair["pools"]
-        ]
-        self.pool_to_pair = {
-            pool["address"]: pair["name"]
-            for pair in common_pairs
-            for pool in pair["pools"]
-        }
-
+        logger.info(
+            "Discovered %d tradeable pairs (%d pool addresses)",
+            len(common_pairs),
+            sum(len(p["pools"]) for p in common_pairs),
+        )
+        self._build_indexes(common_pairs)
         return common_pairs
 
     def get_all_pool_addresses(self) -> List[str]:
@@ -173,6 +209,17 @@ class PairManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _build_indexes(self, pairs: List[dict]):
+        self.pairs = {p["name"]: p for p in pairs}
+        self.pool_addresses = [
+            pool["address"] for pair in pairs for pool in pair["pools"]
+        ]
+        self.pool_to_pair = {
+            pool["address"]: pair["name"]
+            for pair in pairs
+            for pool in pair["pools"]
+        }
 
     @staticmethod
     def _pool_entry(dex: str, version: str, address: str, volume_usd: float) -> dict:

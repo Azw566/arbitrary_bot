@@ -6,19 +6,59 @@
 # Pair Discovery
 # ============================================================
 pairs:
-  mode: "auto"                # "auto" = discover from subgraphs | "manual" = use whitelist only
-  max_pairs: 50               # Max concurrent pairs to monitor (scale up freely)
-  min_liquidity_usd: 100000   # Ignore pools with less USD liquidity than this
+  mode: "hardcoded"           # "hardcoded" = use pools below | "auto" = subgraph discovery | "manual" = whitelist
+  max_pairs: 50               # Cap when using auto mode
+  min_liquidity_usd: 100000   # Filter for auto mode
 
   # Used only when mode: manual
   whitelist:
     # - "WETH/USDC"
-    # - "WETH/USDT"
-    # - "WBTC/WETH"
 
   # Always excluded regardless of mode
   blacklist:
     # - "SHIB/WETH"
+
+  # Used when mode: hardcoded — known high-volume mainnet pools
+  # Each pair needs at least 2 pools on different DEXes to be monitored
+  hardcoded_pools:
+
+    - pair: "WETH/USDC"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc" }
+        - { dex: Sushi, version: V2, address: "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0" }
+
+    - pair: "WETH/USDT"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36" }  # 0.05%
+        - { dex: UniV2, version: V2, address: "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852" }
+        - { dex: Sushi, version: V2, address: "0x06da0fd433C1A5d7a4faa01111c044910A184553" }
+
+    - pair: "WBTC/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD" }  # 0.30%
+        - { dex: UniV3, version: V3, address: "0x4585FE77225b41b697C938B018E2Ac67Ac5a20c0" }  # 0.05%
+        - { dex: UniV2, version: V2, address: "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940" }
+        - { dex: Sushi, version: V2, address: "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58" }
+
+    - pair: "WETH/DAI"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x60594a405d53811d3BC4766596EFD80fd545A270" }  # 0.05%
+        - { dex: UniV2, version: V2, address: "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11" }
+        - { dex: Sushi, version: V2, address: "0xC3D03e4F041Fd4cD388c549Ee2A29a9E5075882f" }
+
+    - pair: "DAI/USDC"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168" }  # 0.01%
+        - { dex: UniV3, version: V3, address: "0x6c6Bc977E13Df9b0de53b251522280BB72383700" }  # 0.05%
+        - { dex: Curve, version: Curve, address: "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7" }  # 3pool
+
+    - pair: "LINK/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xa6Cc3C2531FdaA6Ae1A3CA84c2855806728693e8" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xa2107FA5B38d9bbd2C461D6EDf11B11A50F6b974" }
+        - { dex: Sushi, version: V2, address: "0x167Dc49d6a85F06E57E40C7Cc4C99960Efa98e96" }
 
 # ============================================================
 # Monitoring
