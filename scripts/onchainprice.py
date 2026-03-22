@@ -2696,6 +2696,31 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
     Returns:
         Liste des opportunités d'arbitrage détectées
     """
+    # Minimum WETH reserve for V2/Sushi pools.  Pools below this are stale/
+    # nearly-empty and produce prices wildly detached from market.
+    MIN_WETH_RESERVE = 0.5   # ETH
+    # Any gross spread above this is almost certainly a data artefact, not a
+    # real opportunity (real arb is typically <5% even on illiquid tokens).
+    MAX_GROSS_SPREAD = 50.0  # %
+
+    def _pool_has_liquidity(pool: dict) -> bool:
+        version = pool.get('version', '')
+        if version == 'V3':
+            return pool.get('liquidity', 0) > 0
+        # V2 / Sushi
+        t0 = pool.get('token0', {})
+        t1 = pool.get('token1', {})
+        r0 = t0.get('reserve', 0) or 0
+        r1 = t1.get('reserve', 0) or 0
+        sym0 = t0.get('symbol', '')
+        sym1 = t1.get('symbol', '')
+        if sym0 == 'WETH':
+            return r0 >= MIN_WETH_RESERVE
+        if sym1 == 'WETH':
+            return r1 >= MIN_WETH_RESERVE
+        # Non-WETH pair: just require both reserves to be non-trivial
+        return r0 > 0 and r1 > 0
+
     # Grouper par paire de tokens
     pairs = {}
     for pool in pool_data_list:
@@ -2703,21 +2728,27 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
         if pair not in pairs:
             pairs[pair] = []
         pairs[pair].append(pool)
-    
+
     opportunities = []
-    
+
     for pair, pools in pairs.items():
-        if len(pools) < 2:
+        # Drop illiquid pools before comparing prices
+        liquid_pools = [p for p in pools if _pool_has_liquidity(p)]
+        if len(liquid_pools) < 2:
             continue
-        
+
         # Trouver les prix min/max pour cette paire
-        pools_sorted = sorted(pools, key=lambda x: x['price_0_in_1'])
+        pools_sorted = sorted(liquid_pools, key=lambda x: x['price_0_in_1'])
         min_price_pool = pools_sorted[0]
         max_price_pool = pools_sorted[-1]
-        
+
         price_diff = max_price_pool['price_0_in_1'] - min_price_pool['price_0_in_1']
         percentage_diff = (price_diff / min_price_pool['price_0_in_1']) * 100
-        
+
+        # Reject physically impossible spreads (data artefact / stale price)
+        if percentage_diff > MAX_GROSS_SPREAD:
+            continue
+
         # Calculer les fees combinés
         # fee_percentage is already in % form (e.g. 0.3 = 0.3%)
         # fall back to fee_tier / 10000 which is also in % form

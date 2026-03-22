@@ -44,6 +44,8 @@ def find_triangular_opportunities(
     #                              "sym_in": str, "sym_out": str}
     graph: Dict[str, Dict[str, dict]] = defaultdict(dict)
 
+    MIN_WETH_RESERVE = 0.5  # ETH — skip V2 pools thinner than this
+
     for pool in pool_data_list:
         t0 = pool.get("token0", {})
         t1 = pool.get("token1", {})
@@ -64,6 +66,15 @@ def find_triangular_opportunities(
 
         if not addr0 or not addr1 or p01 <= 0 or p10 <= 0:
             continue
+
+        # Skip V2/Sushi pools with near-zero WETH reserves (stale/depleted)
+        if pool.get("version") == "V2":
+            r0 = t0.get("reserve", 0) or 0
+            r1 = t1.get("reserve", 0) or 0
+            if sym0 == "WETH" and r0 < MIN_WETH_RESERVE:
+                continue
+            if sym1 == "WETH" and r1 < MIN_WETH_RESERVE:
+                continue
 
         multiplier = 1 - fee / 100  # e.g. 0.9970 for 0.3% fee
 
