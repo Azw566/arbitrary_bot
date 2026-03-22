@@ -16,10 +16,11 @@ import sqlite3
 
 # Load environment variables from a local .env file if present
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from tokens import ALL_TOKENS, get_token_address
 
-load_dotenv(r"C:\Users\telem\Desktop\Rabby\.env", encoding='latin-1')
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env", override=False)
 
 ##############################################################################################################################################################
 # CONFIGURATION GLOBALE ET CONSTANTES

@@ -1,0 +1,50 @@
+# ============================================================
+# Arbitrage Bot — Main Configuration
+# ============================================================
+
+# ============================================================
+# Pair Discovery
+# ============================================================
+pairs:
+  mode: "auto"                # "auto" = discover from subgraphs | "manual" = use whitelist only
+  max_pairs: 50               # Max concurrent pairs to monitor (scale up freely)
+  min_liquidity_usd: 100000   # Ignore pools with less USD liquidity than this
+
+  # Used only when mode: manual
+  whitelist:
+    # - "WETH/USDC"
+    # - "WETH/USDT"
+    # - "WBTC/WETH"
+
+  # Always excluded regardless of mode
+  blacklist:
+    # - "SHIB/WETH"
+
+# ============================================================
+# Monitoring
+# ============================================================
+monitoring:
+  interval_seconds: 2         # Delay between full scan iterations
+  batch_size: 100             # Pools per Multicall3 batch (reduce if RPC times out)
+  max_workers: 8              # Thread pool size for blocking web3 calls
+
+# ============================================================
+# Execution
+# ============================================================
+execution:
+  dry_run: true               # true = log only | false = send real on-chain transactions
+  strategy: "two_way"         # Active strategy: two_way | triangular | flash_loan
+  min_profit_pct: 0.5         # Minimum net profit % required to trigger execution
+  max_gas_gwei: 50            # Skip execution if gas price exceeds this (gwei)
+  gas_reserve_eth: 0.05       # ETH kept aside for gas costs
+  slippage_tolerance_pct: 0.5 # Maximum acceptable slippage %
+  max_concurrent: 3           # Max simultaneous trade executions across all pairs
+  max_queue_age_seconds: 10   # Drop queued opportunities older than this
+
+# ============================================================
+# Database  (optional — set enabled: true and fill .env)
+# ============================================================
+database:
+  enabled: false
+  save_opportunities: true    # Log profitable opportunities to DB
+  save_prices: false          # Log raw price ticks (high write volume)
