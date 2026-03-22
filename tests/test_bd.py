@@ -1,11 +1,7 @@
 import pytest
-import json
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from scripts.onchainprice import save_to_database
-
-# Import de la fonction à tester
-from scripts.onchainprice import save_to_database  # <-- adapte selon ton chemin de fichier
 
 @pytest.fixture
 def sample_pools():

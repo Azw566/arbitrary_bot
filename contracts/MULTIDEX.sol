@@ -246,8 +246,8 @@ contract MultiDexArbitrage is IFlashLoanReceiverV3 {
         // Vérifier le deadline
         require(block.timestamp <= arbParams.deadline, "Transaction expired");
         
-        // Solde initial
-        uint256 balanceInitial = IERC20(assets[0]).balanceOf(address(this));
+        // Solde initial (avant swaps, pour référence de débogage si besoin)
+        // uint256 balanceInitial = IERC20(assets[0]).balanceOf(address(this));
         
         // Exécuter les swaps
         for (uint256 i = 0; i < arbParams.swaps.length; i++) {
@@ -265,7 +265,7 @@ contract MultiDexArbitrage is IFlashLoanReceiverV3 {
         require(profit >= arbParams.expectedProfit, "Profit too low");
         
         // Approuver le remboursement
-        IERC20(assets[0]).approve(AAVE_POOL, amountOwed);
+        require(IERC20(assets[0]).approve(AAVE_POOL, amountOwed), "Approve failed");
         
         // Mettre à jour les statistiques
         totalArbitrages++;
@@ -386,7 +386,7 @@ contract MultiDexArbitrage is IFlashLoanReceiverV3 {
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(balance >= amount, "Insufficient balance");
         
-        IERC20(token).transfer(owner, amount);
+        require(IERC20(token).transfer(owner, amount), "Transfer failed");
         
         emit ProfitWithdrawn(token, amount, owner);
     }

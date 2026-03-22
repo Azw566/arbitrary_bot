@@ -1,0 +1,16 @@
+[profile.default]
+src      = "contracts"
+out      = "out"
+libs     = ["lib"]
+test     = "test"           # Foundry Solidity tests (forge test)
+script   = "script"
+solc     = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+
+# Sepolia testnet
+[rpc_endpoints]
+sepolia = "${RPC_URL}"
+
+[etherscan]
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
