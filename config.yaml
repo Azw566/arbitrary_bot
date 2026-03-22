@@ -48,7 +48,7 @@ pairs:
       pools:
         - { dex: UniV3, version: V3, address: "0xa6Cc3C2531FdaA6Ae1A3CA84c2855806728693e8" }  # 0.30%
         - { dex: UniV2, version: V2, address: "0xa2107FA5B38d9bbd2C461D6EDf11B11A50F6b974" }
-        - { dex: Sushi, version: V2, address: "0x167Dc49d6a85F06E57E40C7Cc4C99960Efa98e96" }
+        - { dex: Sushi, version: V2, address: "0xC40D16476380e4037e6b1A2594cAF6a6cc8Da967" }
 
     - pair: "MKR/WETH"
       pools:
@@ -64,27 +64,27 @@ pairs:
 
     - pair: "CRV/WETH"
       pools:
-        - { dex: UniV3, version: V3, address: "0x919Fa96e88d67499339577Fa202345436dcDaf79" }  # 0.30%
+        - { dex: UniV3, version: V3, address: "0x919Fa96e88d67499339577Fa202345436bcDaf79" }  # 0.30%
         - { dex: UniV2, version: V2, address: "0x3dA1313aE46132A397D90d95B1424A9A7e3e0fCE" }
         - { dex: Sushi, version: V2, address: "0x58Dc5a51fE44589BEb22E8CE67720B5BC5378009" }
 
     - pair: "LDO/WETH"
       pools:
         - { dex: UniV3, version: V3, address: "0xa3f558aebAecAf0e11cA4b2199cC5Ed341edfd74" }  # 0.30%
-        - { dex: UniV2, version: V2, address: "0xC558F600B34A5f69dD2f0D06Cb8A88d829B7420a" }
-        - { dex: Sushi, version: V2, address: "0xFB30b47c47E2fAB74ca5b0c1561C2909b280c4E5" }
+        - { dex: UniV2, version: V2, address: "0x454F11D58E27858926d7a4ECE8bfEA2c33E97B13" }
+        - { dex: Sushi, version: V2, address: "0xC558F600B34A5f69dD2f0D06Cb8A88d829B7420a" }
 
     - pair: "SNX/WETH"
       pools:
-        - { dex: UniV3, version: V3, address: "0xA7f3FC32043757039d5e13d790EE43edBcBa8b7c" }  # 0.30%
+        - { dex: UniV3, version: V3, address: "0xEDe8dd046586d22625Ae7fF2708F879eF7bdb8CF" }  # 0.30%
         - { dex: UniV2, version: V2, address: "0x43AE24960e5534731Fc831386c07755A2dc33D47" }
-        - { dex: Sushi, version: V2, address: "0x016BEA32c38e12b3E6B99E1aCD7773eE4a70572A" }
+        - { dex: Sushi, version: V2, address: "0xA1d7b2d891e3A1f9ef4bBC5be20630C2FEB1c470" }
 
     - pair: "COMP/WETH"
       pools:
         - { dex: UniV3, version: V3, address: "0xea4ba4ce14fdd287f380b55419b1c5b6c3f22ab6" }  # 0.30%
         - { dex: UniV2, version: V2, address: "0xCFfDdeD873554F362Ac02f8Fb1f02E5ada10516f" }
-        - { dex: Sushi, version: V2, address: "0x3212B29E33587A00FB1C83346f5dBFA69A458923" }
+        - { dex: Sushi, version: V2, address: "0x31503dcb60119A812feE820bb7042752019F2355" }
 
     - pair: "SUSHI/WETH"
       pools:
@@ -94,9 +94,70 @@ pairs:
 
     - pair: "BAL/WETH"
       pools:
-        - { dex: UniV3, version: V3, address: "0x3c0F58B76e57c88Fa834f5Dd9B90ceBB6Bc6eCd5" }  # 0.30%
-        - { dex: UniV2, version: V2, address: "0xBA12222222228d8Ba445958a75a0704d566BF2C8" }  # note: Balancer vault
+        - { dex: UniV3, version: V3, address: "0xDC2c21F1B54dDaF39e944689a8f90cb844135cc9" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xA70d458A4d9Bc0e6571565faee18a48dA5c0D593" }
         - { dex: Sushi, version: V2, address: "0x10B47177E92Ef9D5C6059055d92DdF6290848991" }
+
+    # ── New mid-cap pairs: wider spreads, slower MEV competition ────────────
+    - pair: "YFI/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x5EB837c4B76239Dcbe770BE1dE9A198B98078FAF" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x04916039B1f59D9745Bf6E0a21f191D1e0A84287" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x2fDbAdf3C4D5A8666Bc06645B8358ab803996E28" }
+        - { dex: Sushi, version: V2, address: "0x088ee5007C98a9677165D78dD2109AE4a3D04d0C" }
+
+    - pair: "CVX/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x97740F5e77D33c51F24BeA12d13719B0C8701d44" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0xeB241d5d5Aa97Fc85119E6f9395eDA18acD96Fa5" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xDf4A9E4D3374373902Fb197FE0652a0508F5499d" }
+        - { dex: Sushi, version: V2, address: "0x05767d9EF41dC40689678fFca0608878fb3dE906" }
+
+    - pair: "ENS/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x468358dBbE8D10512F216e215A01d00D5eb844EB" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x92560C178cE069CC014138eD3C2F5221Ba71f58a" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xB87b65Dacc6171B3ca8c4A934601d0FcB6c61049" }
+        - { dex: Sushi, version: V2, address: "0xa1181481bEb2dc5De0DaF2c85392d81C704BF75D" }
+
+    - pair: "1INCH/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xaEAC4A9ba7Df813b5e6b24c0A76B7390a80a28b1" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0xd35EFAE4097d005720608Eaf37E42a5936C94B44" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x26aAd2da94C59524ac0D93F6D6Cbf9071d7086f2" }
+        - { dex: Sushi, version: V2, address: "0x86f518368E0d49d5916e2BD9EB162E9952b7b04d" }
+
+    - pair: "PENDLE/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x54514Ee06c8C10029f631eAFb0964573e554e319" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x57aF956d3E2cCa3B86f3D8C6772C03ddca3eAacB" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x59006FbBcF39592324095404FceaA2852f4d0c79" }
+        - { dex: Sushi, version: V2, address: "0x37922C69b08BABcCEaE735A31235c81f1d1e8E43" }
+
+    - pair: "FXS/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x39c9E3128b8736e02A30B2B9b7E50FF522b935c5" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xecBa967D84fCF0405F6b32Bc45F4d36BfDBB2E81" }
+        - { dex: Sushi, version: V2, address: "0x61eB53ee427aB4E007d78A9134AaCb3101A2DC23" }
+
+    - pair: "GRT/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x0e2c4bE9F3408E5b1FF631576D946Eb8C224b5ED" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x2e81eC0B8B4022fAC83A21B2F2B4B8f5ED744D70" }
+        - { dex: Sushi, version: V2, address: "0x7B504a15ef05F4EED1C07208C5815c49022A0C19" }
+
+    - pair: "DYDX/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x836824Fa54eD624b4CdDDeC21a20e52EdC119d4B" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0xD8de6af55F618a7Bc69835D55DDC6582220c36c0" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xf660809B6D2D34cc43f620a9B22A40895365A5F8" }
+        - { dex: Sushi, version: V2, address: "0xE4eBD836832F1a8A81641111A5b081a2f90B9430" }
+
+    - pair: "IMX/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x81fbBc40Cf075FD7De6AfCe1bc72EDA1BB0e13aa" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x0149ebe930260CcfdaAA8e3081B4C39446b6F491" }
+        - { dex: Sushi, version: V2, address: "0x18Cd890F4e23422DC4aa8C2D6E0Bd3F3bD8873d8" }
 
 # ============================================================
 # Monitoring
