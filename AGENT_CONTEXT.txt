@@ -1,0 +1,139 @@
+================================================================================
+MULTI-DEX ARBITRAGE BOT — AGENT CONTEXT FILE
+Generated: 2026-03-23 | For use by future Claude agents working on this repo
+================================================================================
+
+## MISSION
+Automated on-chain arbitrage bot targeting Ethereum mainnet (Sepolia testnet).
+Monitors price discrepancies across Uniswap V2/V3, SushiSwap, and Curve for
+two-way (A→B→A) and triangular (A→B→C→A) arbitrage using Aave V3 flash loans.
+
+## REPO STRUCTURE
+/arbitrary_bot/
+├── scripts/
+│   ├── bot.py               # Main event loop & orchestration (370 lines)
+│   ├── onchainprice.py      # Core arb detection & Multicall3 data fetch (4291 lines)
+│   ├── executor.py          # Concurrent trade execution w/ token locking (164 lines)
+│   ├── pair_manager.py      # Pool discovery (hardcoded/subgraph) (227 lines)
+│   ├── triangular.py        # Triangular arbitrage cycle detection (159 lines)
+│   ├── block_listener.py    # New-block polling at 300ms interval (83 lines)
+│   └── tokens.py            # Token address registry (230 lines)
+├── contracts/
+│   ├── MULTIDEX.sol         # On-chain arbitrage executor (flash loan + swaps)
+│   ├── AtomicArb.sol        # Atomic arbitrage contract
+│   └── DeployableArb.sol    # Deployment wrapper
+├── tests/
+│   ├── test_bd.py           # DB persistence tests (mocked)
+│   ├── test_monitoring.py   # Continuous monitoring test (live)
+│   └── test_price_changes.py
+├── config.yaml              # Main config: 71 hardcoded pools, dry_run=true
+├── .env.example             # RPC_URL, PRIVATE_KEY, WALLET_ADDRESS, CONTRACT_ADDRESS
+├── foundry.toml             # Foundry config targeting Sepolia (chain 11155111)
+└── requirements.txt         # Python deps: web3, pyyaml, psycopg2, pandas, requests
+
+## TECH STACK
+- Python 3.x + web3.py 6.0+ for blockchain interaction
+- Foundry (forge, cast, anvil) for Solidity compilation & deployment
+- Solidity 0.8.20 + OpenZeppelin for on-chain contracts
+- Multicall3 (0xcA11bde05977b3631167028862bE2a173976CA11) for batched RPC calls
+- Aave V3 flash loans (0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2)
+- PostgreSQL (optional) for opportunity logging
+- Sepolia testnet for testing
+
+## DATA FLOW
+1. BlockListener polls for new blocks every 300ms
+2. Each new block triggers batch_get_pool_data() via Multicall3
+   → Single RPC call fetches ~71 pools in ~0.9s
+   → Decodes V2 reserves, V3 sqrtPriceX96, Curve dy
+3. find_arbitrage_opportunities() compares prices per pair
+   → Groups pools by pair → finds min/max price pools
+   → net_profit = gross_spread - fees - gas_cost_pct
+4. find_triangular_opportunities() builds directed graph
+   → Detects A→B→C→A cycles where product(rates) > 1
+5. Profitable opportunities queued in asyncio.PriorityQueue
+6. Dispatch loop pulls from queue, drops stale (>10s old)
+7. Executor.try_execute() acquires token locks → runs trade
+   → dry_run=true: logs only | dry_run=false: sends tx
+
+## KEY CONFIG THRESHOLDS
+- min_profit_pct: 0.05%     (minimum net profit to consider)
+- max_gas_gwei: 50          (skip if gas > 50 gwei)
+- trade_size_usd: 10000     (assumed trade size for gas % calc)
+- slippage_tolerance_pct: 0.5%
+- max_concurrent: 3         (simultaneous trades)
+- max_queue_age_seconds: 10 (drop stale opportunities)
+- MIN_WETH_RESERVE: 0.5 ETH (pool liquidity filter)
+- MAX_GROSS_SPREAD: 50%     (outlier filter for bad data)
+
+## GAS COST MODEL
+GAS_TWO_WAY    = 400,000 gas units (2 swaps + flash loan overhead)
+GAS_TRIANGULAR = 600,000 gas units (3 swaps + flash loan overhead)
+gas_cost_pct = (gas_units * gas_price_gwei * 1e9 / 1e18 * eth_price_usd) / trade_size_usd * 100
+
+## 71 MONITORED POOLS (config.yaml)
+High-volume pairs (WETH/USDC, WBTC/WETH, UNI/WETH, etc.) monitored across:
+  - Uniswap V3 (0.05% and 0.30% fee tiers)
+  - Uniswap V2 (0.30% fee)
+  - SushiSwap (0.30% fee)
+  - Curve (0.05% fee where applicable)
+
+## CURRENT STATUS
+- Arbitrage detection:   WORKING (two-way + triangular)
+- Pool data fetching:    WORKING (Multicall3 optimized)
+- Gas cost accounting:   WORKING
+- Concurrency/locking:   WORKING
+- Execution:             DRY-RUN ONLY (dry_run=true in config)
+- Tests:                 MINIMAL (no unit tests for core algorithms)
+- MEV protection:        MISSING
+- Slippage modeling:     BASIC (hardcoded 0.5%)
+- RPC resilience:        BASIC (5 fallback URLs listed, no active switching)
+
+## KNOWN BOTTLENECKS TO OPTIMIZE
+1. Gas + ETH price fetched from RPC EVERY block — should cache per-block
+2. BlockListener uses 300ms polling — should use WebSocket subscription
+3. Token info cache not persisted across restarts — use SQLite
+4. Database writes happen synchronously — should use async queue
+5. Subgraph queries run sequentially — should parallelize
+6. Slippage is hardcoded — should model dynamically from pool depth
+7. No MEV protection — front-running risk on all trades
+8. No circuit breaker — bad RPC doesn't trigger active failover
+
+## IMPORTANT FILES TO READ BEFORE EDITING
+- scripts/bot.py          lines 77-97   (gas estimation logic)
+- scripts/bot.py          lines 218-260 (monitoring loop)
+- scripts/onchainprice.py lines 1177-1553 (batch_get_pool_data)
+- scripts/onchainprice.py lines 2687-2774 (find_arbitrage_opportunities)
+- scripts/triangular.py   lines 33-147  (find_triangular_opportunities)
+- scripts/executor.py     lines 1-164   (entire file — concurrency)
+- config.yaml             (all thresholds and pool list)
+
+## TESTNET SETUP
+- Network: Sepolia (chain ID 11155111)
+- RPC: Set RPC_URL in .env to a Sepolia endpoint
+- Foundry: `forge build` then `forge script` for deployment
+- Tests: `python tests/test_monitoring.py` or `python -m pytest tests/`
+- Contract deploy: `forge create contracts/MULTIDEX.sol:MultiDexArbitrage --rpc-url $RPC_URL`
+
+## CONTRACTS
+MULTIDEX.sol implements IFlashLoanReceiverV3 (Aave):
+  1. executeOperation() called by Aave after flash loan
+  2. Executes swaps through UniV2/UniV3/Curve routers
+  3. Repays flash loan + 0.09% fee
+  4. Profit stays in contract (withdrawable by owner)
+  Owner functions: withdraw(), setOwner()
+
+## HOW TO RUN
+  pip install -r requirements.txt
+  cp .env.example .env  # fill in RPC_URL, PRIVATE_KEY, etc.
+  python scripts/bot.py
+
+## SAFETY NOTES
+- NEVER set dry_run=false without thorough testnet validation
+- NEVER commit .env file with real private keys
+- Contract owner is the deployer wallet — secure it
+- Min profit threshold must exceed gas costs or you lose money
+- Test on Sepolia first, then paper-trade on mainnet with dry_run=true
+
+================================================================================
+END OF CONTEXT FILE
+================================================================================

@@ -9,6 +9,7 @@ for the monitoring loop.
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -58,6 +59,16 @@ class PairManager:
         raw_pairs  = cfg.get("hardcoded_pools") or []
         blacklist  = {s.upper() for s in cfg.get("blacklist") or []}
 
+        # Bundle filtering — restrict to pairs listed in the active bundle
+        active_bundle = cfg.get("active_bundle", "all")
+        bundles       = cfg.get("bundles", {})
+        bundle_pairs: Optional[set] = None
+        if active_bundle and active_bundle != "all" and active_bundle in bundles:
+            bundle_pairs = {s.upper() for s in bundles[active_bundle]}
+            logger.info("Active bundle: '%s' (%d pairs)", active_bundle, len(bundle_pairs))
+        elif active_bundle == "all" or active_bundle not in bundles:
+            logger.info("Active bundle: 'all' — loading every pair in registry")
+
         common_pairs: List[dict] = []
 
         for entry in raw_pairs:
@@ -75,6 +86,9 @@ class PairManager:
 
             if name.upper() in blacklist:
                 logger.info("Skipping blacklisted pair: %s", name)
+                continue
+
+            if bundle_pairs is not None and name.upper() not in bundle_pairs:
                 continue
 
             common_pairs.append({
@@ -114,12 +128,18 @@ class PairManager:
         cfg = self.config["pairs"]
         nb  = cfg.get("max_pairs", 50)
 
-        logger.info("Fetching top pairs from all DEXes (limit=%d each)…", nb)
+        logger.info("Fetching top pairs from all DEXes in parallel (limit=%d each)…", nb)
 
-        v2_pairs    = get_top_pairs_v2(UNISWAP_V2, limit=nb)
-        v3_pairs    = get_top_pairs_v3(UNISWAP_V3, limit=nb)
-        sushi_pairs = get_top_pairs_sushiswap(SUSHISWAP, limit=nb)
-        curve_pairs = get_top_pairs_curve(limit=nb)
+        # Run the four independent subgraph queries concurrently
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="subgraph") as pool:
+            fut_v2    = pool.submit(get_top_pairs_v2,        UNISWAP_V2, nb)
+            fut_v3    = pool.submit(get_top_pairs_v3,        UNISWAP_V3, nb)
+            fut_sushi = pool.submit(get_top_pairs_sushiswap, SUSHISWAP,  nb)
+            fut_curve = pool.submit(get_top_pairs_curve,     nb)
+            v2_pairs    = fut_v2.result()
+            v3_pairs    = fut_v3.result()
+            sushi_pairs = fut_sushi.result()
+            curve_pairs = fut_curve.result()
 
         v2_from_curve, v3_from_curve, sushi_from_curve = fetch_matching_pairs_for_curve(
             curve_pairs, UNISWAP_V2, UNISWAP_V3, SUSHISWAP

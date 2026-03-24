@@ -10,19 +10,140 @@ pairs:
   max_pairs: 50               # Cap when using auto mode
   min_liquidity_usd: 100000   # Filter for auto mode
 
+  # ── Active bundle ────────────────────────────────────────────────────────────
+  # Switch between named bundles without touching the pool list.
+  # Options: major | defi_bluechip | mid_cap | lst | niche | balanced | all
+  #
+  #   major        — WETH/USDC, WBTC/WETH only. Most competitive, good baseline.
+  #   defi_bluechip— UNI, LINK, AAVE, MKR, CRV, LDO, SNX, COMP, SUSHI, BAL.
+  #                  Well-known but less watched than major pairs.
+  #   mid_cap      — YFI, CVX, ENS, 1INCH, PENDLE, FXS, GRT, DYDX, IMX.
+  #                  Wider spreads, slower MEV bots.
+  #   lst          — wstETH, rETH, cbETH. Liquid staking tokens. Excellent for
+  #                  triangular arb (all peg to ETH ~1:1 but drift constantly).
+  #   niche        — APE, BLUR, LOOKS, RPL, FRAX/USDC, LUSD, crvUSD. Lowest
+  #                  competition. Spreads can be large during volatility.
+  #   balanced     — defi_bluechip + mid_cap. Best risk/reward starting point.
+  #   all          — Every pair in the list.
+  active_bundle: "balanced"
+
   # Used only when mode: manual
   whitelist:
     # - "WETH/USDC"
 
-  # Always excluded regardless of mode
+  # Always excluded regardless of mode or bundle
   blacklist:
     # - "SHIB/WETH"
 
-  # Used when mode: hardcoded — known high-volume mainnet pools
-  # Each pair needs at least 2 pools on different DEXes to be monitored
+  # ── Bundle definitions ───────────────────────────────────────────────────────
+  # Each bundle is a list of pair names. The bot loads only pools belonging
+  # to the active bundle when mode is "hardcoded".
+  bundles:
+    major:
+      - "WETH/USDC"
+      - "WBTC/WETH"
+
+    defi_bluechip:
+      - "UNI/WETH"
+      - "LINK/WETH"
+      - "AAVE/WETH"
+      - "MKR/WETH"
+      - "CRV/WETH"
+      - "LDO/WETH"
+      - "SNX/WETH"
+      - "COMP/WETH"
+      - "SUSHI/WETH"
+      - "BAL/WETH"
+
+    mid_cap:
+      - "YFI/WETH"
+      - "CVX/WETH"
+      - "ENS/WETH"
+      - "1INCH/WETH"
+      - "PENDLE/WETH"
+      - "FXS/WETH"
+      - "GRT/WETH"
+      - "DYDX/WETH"
+      - "IMX/WETH"
+
+    lst:
+      - "wstETH/WETH"
+      - "rETH/WETH"
+      - "cbETH/WETH"
+
+    niche:
+      - "APE/WETH"
+      - "BLUR/WETH"
+      - "LOOKS/WETH"
+      - "RPL/WETH"
+      - "FRAX/USDC"
+      - "LUSD/USDC"
+      - "crvUSD/USDC"
+
+    balanced:
+      - "UNI/WETH"
+      - "LINK/WETH"
+      - "AAVE/WETH"
+      - "MKR/WETH"
+      - "CRV/WETH"
+      - "LDO/WETH"
+      - "SNX/WETH"
+      - "COMP/WETH"
+      - "SUSHI/WETH"
+      - "BAL/WETH"
+      - "YFI/WETH"
+      - "CVX/WETH"
+      - "ENS/WETH"
+      - "1INCH/WETH"
+      - "PENDLE/WETH"
+      - "FXS/WETH"
+      - "GRT/WETH"
+      - "DYDX/WETH"
+      - "IMX/WETH"
+
+    all:
+      - "WETH/USDC"
+      - "WBTC/WETH"
+      - "UNI/WETH"
+      - "LINK/WETH"
+      - "AAVE/WETH"
+      - "MKR/WETH"
+      - "CRV/WETH"
+      - "LDO/WETH"
+      - "SNX/WETH"
+      - "COMP/WETH"
+      - "SUSHI/WETH"
+      - "BAL/WETH"
+      - "YFI/WETH"
+      - "CVX/WETH"
+      - "ENS/WETH"
+      - "1INCH/WETH"
+      - "PENDLE/WETH"
+      - "FXS/WETH"
+      - "GRT/WETH"
+      - "DYDX/WETH"
+      - "IMX/WETH"
+      - "wstETH/WETH"
+      - "rETH/WETH"
+      - "cbETH/WETH"
+      - "APE/WETH"
+      - "BLUR/WETH"
+      - "LOOKS/WETH"
+      - "RPL/WETH"
+      - "FRAX/USDC"
+      - "LUSD/USDC"
+      - "crvUSD/USDC"
+
+  # ── Pool registry ─────────────────────────────────────────────────────────────
+  # Complete list of all known pools. The active bundle filters which ones run.
   hardcoded_pools:
 
-    # ── High-volume anchors (kept for cross-comparison) ─────────────────────
+    # ════════════════════════════════════════════════════════
+    # BUNDLE: major
+    # Most competitive. MEV bots fight here within ms.
+    # Useful as baseline / cross-comparison only.
+    # ════════════════════════════════════════════════════════
+
     - pair: "WETH/USDC"
       pools:
         - { dex: UniV3, version: V3, address: "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640" }  # 0.05%
@@ -37,7 +158,11 @@ pairs:
         - { dex: UniV2, version: V2, address: "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940" }
         - { dex: Sushi, version: V2, address: "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58" }
 
-    # ── Mid-tier: less arbitraged, more likely to show spreads ──────────────
+    # ════════════════════════════════════════════════════════
+    # BUNDLE: defi_bluechip
+    # Known DeFi names. Moderate competition.
+    # ════════════════════════════════════════════════════════
+
     - pair: "UNI/WETH"
       pools:
         - { dex: UniV3, version: V3, address: "0x1d42064Fc4Beb5F8aAF85F4617AE8b3b5B8Bd801" }  # 0.30%
@@ -98,7 +223,11 @@ pairs:
         - { dex: UniV2, version: V2, address: "0xA70d458A4d9Bc0e6571565faee18a48dA5c0D593" }
         - { dex: Sushi, version: V2, address: "0x10B47177E92Ef9D5C6059055d92DdF6290848991" }
 
-    # ── New mid-cap pairs: wider spreads, slower MEV competition ────────────
+    # ════════════════════════════════════════════════════════
+    # BUNDLE: mid_cap
+    # Wider spreads, slower MEV competition.
+    # ════════════════════════════════════════════════════════
+
     - pair: "YFI/WETH"
       pools:
         - { dex: UniV3, version: V3, address: "0x5EB837c4B76239Dcbe770BE1dE9A198B98078FAF" }  # 0.05%
@@ -158,6 +287,65 @@ pairs:
         - { dex: UniV3, version: V3, address: "0x81fbBc40Cf075FD7De6AfCe1bc72EDA1BB0e13aa" }  # 0.30%
         - { dex: UniV2, version: V2, address: "0x0149ebe930260CcfdaAA8e3081B4C39446b6F491" }
         - { dex: Sushi, version: V2, address: "0x18Cd890F4e23422DC4aa8C2D6E0Bd3F3bD8873d8" }
+
+    # ════════════════════════════════════════════════════════
+    # BUNDLE: lst (Liquid Staking Tokens)
+    # All peg ~1:1 to ETH but drift constantly.
+    # Excellent for triangular arb: rETH → wstETH → cbETH → rETH
+    # Very low MEV competition on these routes.
+    # ════════════════════════════════════════════════════════
+
+    - pair: "wstETH/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xd340B57aaCDD10F96FC1CF10e15921936F41E29c" }  # 0.01%
+        - { dex: UniV3, version: V3, address: "0x109830a1AAaD605BbF02a9dFA7a0DF6e12Dfec5F" }  # 0.05%
+        - { dex: UniV2, version: V2, address: "0x3F3eE751Ab00246cB0beEc2e904ef51e18Ac4D77" }
+
+    - pair: "rETH/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xa4e0faA58465A2D369aa21B3e42d43374c6F9613" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0xf0E02cf61b31260fd5AE527d58Be16312BDA59b1" }  # 0.30%
+
+    - pair: "cbETH/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x840DEEef2f115Cf50DA625F7368C24af6fE74410" }  # 0.05%
+
+    # ════════════════════════════════════════════════════════
+    # BUNDLE: niche
+    # Lowest competition. Larger spreads during volatility.
+    # Less liquidity — use smaller trade sizes.
+    # ════════════════════════════════════════════════════════
+
+    - pair: "APE/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xF79FC43494CE8A4613cB0b2A67A1B1207fD05D27" }  # 1.00%
+        - { dex: UniV2, version: V2, address: "0xFbD0107E1592A00BF7C4f7e1Ab68e7B04e89f15b" }
+
+    - pair: "BLUR/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x824A30F2984F9013F2C8D0a29C0a3Cc5fD5c0673" }  # 0.30%
+
+    - pair: "LOOKS/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x4b5Ab61593A2401B1075b90c04cBCDD3F87CE011" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0xDc00BA87cC2D99468f7f34bc04cbF72E111A32f7" }
+
+    - pair: "RPL/WETH"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xe42318eA3b998e8355a3Da364EB9D48eC725Eb45" }  # 0.30%
+
+    - pair: "FRAX/USDC"
+      pools:
+        - { dex: UniV3, version: V3, address: "0xc63B0708E2F7e69CB8A1df0e1389A98C35A76D52" }  # 0.05%
+
+    - pair: "LUSD/USDC"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x4e0924d3a751bE199C426d52fb1f2337fa96f736" }  # 0.05%
+
+    - pair: "crvUSD/USDC"
+      pools:
+        - { dex: UniV3, version: V3, address: "0x73Ea3d8ba3d7380201b270ec504B33Ed5e478542" }  # 0.05%
+
 
 # ============================================================
 # Monitoring

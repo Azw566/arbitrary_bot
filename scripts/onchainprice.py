@@ -50,16 +50,83 @@ PROFIT_NET = float(os.getenv('PROFIT_NET', '0.005'))
 
 CHAIN_ID = int(os.getenv("CHAIN_ID", 11155111))  # ID de la chaîne (11155111 pour Sepolia par défaut)
 
+def _to_http(url: str) -> str:
+    """Convert wss:// or ws:// to https:// / http:// for HTTPProvider compatibility."""
+    return url.replace("wss://", "https://").replace("ws://", "http://")
+
 RPC_PROVIDERS = [
-    "https://mainnet.infura.io/v3/b23f45e3a93e470e8728a7f61baa0295",
-    "https://mainnet.infura.io/v3/2ba89ba9e1414a768b9b95bb133b06fe",
-    "https://rpc.ankr.com/eth",
-    "https://eth.api.onfinality.io/public",
-    "https://1rpc.io/eth"
+    _to_http(url) for url in [
+        os.getenv("RPC_URL"),
+        os.getenv("RPC_URL_FALLBACK"),
+        "https://rpc.ankr.com/eth",
+        "https://eth.api.onfinality.io/public",
+        "https://1rpc.io/eth",
+    ] if url
 ]
 
-# Buffer pour récup les infos des tokens
+# Buffer pour récup les infos des tokens (L1 in-memory cache)
 TOKEN_INFO_CACHE = {}
+
+# ---------------------------------------------------------------------------
+# SQLite-backed persistent token cache (L2)
+# ---------------------------------------------------------------------------
+_TOKEN_DB_PATH = Path(__file__).resolve().parent.parent / ".cache" / "tokens.db"
+
+def _init_token_db() -> sqlite3.Connection:
+    """Create the .cache directory and tokens table if they don't exist."""
+    _TOKEN_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_TOKEN_DB_PATH), check_same_thread=False)
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS token_cache (
+               address      TEXT PRIMARY KEY,
+               symbol       TEXT NOT NULL,
+               decimals     INTEGER NOT NULL,
+               last_updated REAL NOT NULL
+           )"""
+    )
+    conn.commit()
+    return conn
+
+_token_db: sqlite3.Connection = _init_token_db()
+
+def _load_token_db_into_memory():
+    """Populate TOKEN_INFO_CACHE from SQLite on startup."""
+    try:
+        rows = _token_db.execute(
+            "SELECT address, symbol, decimals FROM token_cache"
+        ).fetchall()
+        for address, symbol, decimals in rows:
+            if address not in TOKEN_INFO_CACHE:
+                TOKEN_INFO_CACHE[address] = {"symbol": symbol, "decimals": decimals}
+        if rows:
+            import logging as _logging
+            _logging.getLogger(__name__).info(
+                "Loaded %d token entries from SQLite cache", len(rows)
+            )
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Could not load token DB: %s", exc)
+
+def _persist_token_to_db(address: str, symbol: str, decimals: int):
+    """Upsert a single token record into the SQLite cache."""
+    try:
+        _token_db.execute(
+            """INSERT INTO token_cache (address, symbol, decimals, last_updated)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(address) DO UPDATE SET
+                   symbol       = excluded.symbol,
+                   decimals     = excluded.decimals,
+                   last_updated = excluded.last_updated""",
+            (address, symbol, decimals, time.time()),
+        )
+        _token_db.commit()
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Could not persist token to DB: %s", exc)
+
+# Warm up the in-memory cache from SQLite right at import time
+_load_token_db_into_memory()
+# ---------------------------------------------------------------------------
 
 # Flash loan fee Aave V3 = 0.09%
 AAVE_FLASH_LOAN_FEE = 0.0009
@@ -735,12 +802,11 @@ def check_wallet_balance(w3, wallet_address: str,
 
 def get_wallet_contents(w3=None, private_key=PRIVATE_KEY, check_tokens=True, custom_tokens=None) -> Dict:
     if w3 is None:
-        RPC_PROVIDERS = [
-            "https://mainnet.infura.io/v3/b23f45e3a93e470e8728a7f61baa0295",
-            "https://rpc.ankr.com/eth",
-            "https://eth.api.onfinality.io/public"
-        ]
-        for rpc in RPC_PROVIDERS:
+        _local_providers = [url for url in [
+            os.getenv("RPC_URL"), os.getenv("RPC_URL_FALLBACK"),
+            "https://rpc.ankr.com/eth", "https://eth.api.onfinality.io/public"
+        ] if url]
+        for rpc in _local_providers:
             try:
                 w3 = Web3(Web3.HTTPProvider(rpc))
                 if w3.is_connected():
@@ -1010,10 +1076,11 @@ def get_token_info(token_address):
             'decimals': decimals,
             'symbol': symbol
         }
-        #  Ajouter au cache avec l'adresse checksum
+        #  Ajouter au cache avec l'adresse checksum (L1 + L2)
         TOKEN_INFO_CACHE[token_address] = info
+        _persist_token_to_db(token_address, symbol, decimals)
         return info
-        
+
     except Exception as e:
         print(f" Erreur récupération info token {token_address}: {e}")
         return None
@@ -1146,12 +1213,14 @@ def batch_get_tokens_info(token_addresses: List[str]) -> Dict:
                             symbol = f"TOKEN_{token_address[:8]}"
                             print(f"  Impossible de décoder le symbole pour {token_address}: {e}")
                 
-                #  CORRECTION #6: Ajouter au cache avec l'adresse checksum comme clé
+                #  CORRECTION #6: Ajouter au cache avec l'adresse checksum comme clé (L1 + L2)
                 if decimals is not None:
+                    _sym = symbol if symbol else f"TOKEN_{token_address[:8]}"
                     TOKEN_INFO_CACHE[token_address] = {
                         'decimals': decimals,
-                        'symbol': symbol if symbol else f"TOKEN_{token_address[:8]}"
+                        'symbol': _sym
                     }
+                    _persist_token_to_db(token_address, _sym, decimals)
                     tokens_added += 1
                     
             except Exception as e:
@@ -2684,7 +2753,115 @@ def monitor_pools_continuously(interval_seconds: int = INTERVAL_PAUSE, max_itera
 # FONCTION DÉTECTION D'OPPORTUNITÉS D'ARBITRAGE (RÉUTILISABLE)
 ##############################################################################################################################################################################
 
-def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percentage: float = PROFIT_NET, gas_cost_pct: float = 0.0) -> List[Dict]:
+def calculate_price_impact(pool_data: dict, trade_size_usd: float) -> float:
+    """
+    Calculate dynamic price impact (slippage) based on pool depth.
+
+    Returns impact as a percentage (e.g. 0.25 means 0.25% slippage).
+    This replaces the hardcoded DEFAULT_SLIPPAGE_TOLERANCE in arb detection.
+
+    Strategy by pool type:
+    - Curve:       0.1% fixed  (highly liquid stable pools)
+    - Uniswap V3:  estimate from on-chain liquidity value, capped at 2%
+    - Uniswap V2 / SushiSwap: constant-product formula
+                   impact = trade_size_in_token / (reserve0 + trade_size_in_token)
+                   actual_slippage = impact * 100, capped at 2%
+    """
+    if trade_size_usd <= 0:
+        return DEFAULT_SLIPPAGE_TOLERANCE * 100  # fallback: 0.5%
+
+    dex = pool_data.get('dex', '').lower()
+    version = pool_data.get('version', '').upper()
+
+    # ── Curve: stable pools are tightly pegged, impact is negligible ─────────
+    if dex == 'curve':
+        return 0.1
+
+    # ── Uniswap V3: estimate from raw on-chain liquidity ─────────────────────
+    if version == 'V3':
+        liquidity = pool_data.get('liquidity', 0) or 0
+        if liquidity > 0:
+            # Rough liquidity_usd proxy: liquidity ticks encode sqrt(x*y),
+            # so we use a conservative scale factor (1e6 normalises typical values)
+            liquidity_usd = liquidity / 1e6
+            estimated_impact = (trade_size_usd / (liquidity_usd * 0.01)
+                                if liquidity_usd > 0 else 2.0)
+            return min(estimated_impact, 2.0)  # cap at 2%
+        return 0.5  # no liquidity data available — fall back to 0.5%
+
+    # ── Uniswap V2 / SushiSwap: constant-product formula ─────────────────────
+    token0 = pool_data.get('token0', {})
+    reserve0 = token0.get('reserve', 0) or 0  # already in human-readable units
+    price_0_in_1 = pool_data.get('price_0_in_1', 0) or 0
+    if price_0_in_1 > 0 and reserve0 > 0:
+        trade_size_in_token = trade_size_usd / price_0_in_1
+        impact = trade_size_in_token / (reserve0 + trade_size_in_token)
+        return min(impact * 100, 2.0)  # convert ratio → %, cap at 2%
+
+    return DEFAULT_SLIPPAGE_TOLERANCE * 100  # fallback: 0.5%
+
+
+def calculate_optimal_trade_size(buy_pool: dict, sell_pool: dict, max_trade_usd: float = 50000) -> float:
+    """
+    Compute the optimal trade size in USD based on pool liquidity.
+
+    For V2 pools: optimal_size = min(reserve_usd * 0.02, max_trade_usd)
+      where reserve_usd = reserve_eth * eth_price (~$3500).
+      Hard cap: never exceed 3% of pool reserves.
+
+    For V3 pools: optimal_size = min(tvl_estimate * 0.01, max_trade_usd)
+      where tvl_estimate = liquidity / 1e6 (rough USD estimate at ~$3500 ETH).
+
+    For Curve pools: falls back to V2 logic using token balances (reserves).
+
+    Returns the minimum of buy-pool and sell-pool optimal sizes so the trade
+    fits comfortably inside both pools.
+    """
+    ETH_PRICE_FALLBACK = 3500.0
+    try:
+        eth_price = get_eth_price_usd() or ETH_PRICE_FALLBACK
+    except Exception:
+        eth_price = ETH_PRICE_FALLBACK
+
+    def _pool_optimal(pool: dict) -> float:
+        version = pool.get('version', 'V2')
+        if version == 'V3':
+            liquidity = pool.get('liquidity', 0) or 0
+            tvl_estimate = liquidity / 1e6
+            raw = tvl_estimate * 0.01
+        else:
+            # V2, Sushi, Curve — use the WETH reserve as USD proxy
+            t0 = pool.get('token0', {}) or {}
+            t1 = pool.get('token1', {}) or {}
+            r0 = t0.get('reserve', 0) or 0
+            r1 = t1.get('reserve', 0) or 0
+            sym0 = t0.get('symbol', '')
+            sym1 = t1.get('symbol', '')
+
+            if sym0 == 'WETH':
+                reserve_usd = r0 * eth_price
+            elif sym1 == 'WETH':
+                reserve_usd = r1 * eth_price
+            else:
+                # Non-WETH pair: use larger reserve as crude USD proxy
+                reserve_usd = max(r0, r1)
+
+            # 2% of pool depth; hard-capped at 3% to avoid excessive impact
+            raw = reserve_usd * 0.02
+            hard_cap = reserve_usd * 0.03
+            raw = min(raw, hard_cap)
+
+        return min(raw, max_trade_usd)
+
+    buy_opt  = _pool_optimal(buy_pool)
+    sell_opt = _pool_optimal(sell_pool)
+    # Use the more conservative size so the trade fits inside both pools
+    optimal = min(buy_opt, sell_opt)
+    # Floor at $100 to avoid division-by-zero and dust trades
+    return max(optimal, 100.0)
+
+
+def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percentage: float = PROFIT_NET, gas_cost_pct: float = 0.0, trade_size_usd: float = 10_000.0, gas_cost_usd: float = 0.0) -> List[Dict]:
     """
     Trouve les opportunités d'arbitrage entre les pools
 
@@ -2692,6 +2869,8 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
         pool_data_list: Liste des données de pools
         min_profit_percentage: Profit net minimum requis (en %)
         gas_cost_pct: Coût du gas en % du trade (soustrait du profit net)
+        trade_size_usd: Reference trade size used to compute gas_cost_pct
+        gas_cost_usd: Absolute gas cost in USD (used for optimal-size rescaling)
 
     Returns:
         Liste des opportunités d'arbitrage détectées
@@ -2702,6 +2881,8 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
     # Any gross spread above this is almost certainly a data artefact, not a
     # real opportunity (real arb is typically <5% even on illiquid tokens).
     MAX_GROSS_SPREAD = 50.0  # %
+    # Minimum effective trade size — filters out dust positions
+    MIN_TRADE_SIZE_USD = 1000.0
 
     def _pool_has_liquidity(pool: dict) -> bool:
         version = pool.get('version', '')
@@ -2755,7 +2936,30 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
         fee1 = min_price_pool.get('fee_percentage', min_price_pool.get('fee_tier', 3000) / 10000)
         fee2 = max_price_pool.get('fee_percentage', max_price_pool.get('fee_tier', 3000) / 10000)
         total_fees = fee1 + fee2
-        net_profit = percentage_diff - total_fees - gas_cost_pct
+
+        # ── Optimal trade size ───────────────────────────────────────────────
+        optimal_trade_usd = calculate_optimal_trade_size(min_price_pool, max_price_pool)
+
+        # Skip dust trades that are too small to be worth executing
+        if optimal_trade_usd < MIN_TRADE_SIZE_USD:
+            continue
+
+        # ── Recalculate gas cost % using the actual optimal trade size ───────
+        # gas_cost_usd is the absolute cost; rescaling it over the optimal size
+        # means larger trades carry proportionally lower gas overhead.
+        if gas_cost_usd > 0 and optimal_trade_usd > 0:
+            adjusted_gas_pct = (gas_cost_usd / optimal_trade_usd) * 100
+        else:
+            # Fall back to the pre-computed percentage (reference trade size)
+            adjusted_gas_pct = gas_cost_pct
+
+        # Dynamic slippage: use pool-depth model instead of hardcoded 0.5%
+        slippage_buy = calculate_price_impact(min_price_pool, optimal_trade_usd)
+        slippage_sell = calculate_price_impact(max_price_pool, optimal_trade_usd)
+        total_slippage_pct = slippage_buy + slippage_sell
+
+        net_profit = percentage_diff - total_fees - adjusted_gas_pct - total_slippage_pct
+        estimated_profit_usd = (net_profit / 100.0) * optimal_trade_usd
 
         if net_profit > min_profit_percentage:
             opportunities.append({
@@ -2764,13 +2968,16 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
                 'sell_pool': max_price_pool,
                 'gross_profit_percentage': percentage_diff,
                 'total_fees_percentage': total_fees,
-                'gas_cost_pct': round(gas_cost_pct, 4),
+                'gas_cost_pct': round(adjusted_gas_pct, 4),
+                'slippage_pct': round(total_slippage_pct, 4),
                 'net_profit_percentage': round(net_profit, 6),
+                'optimal_trade_size_usd': round(optimal_trade_usd, 2),
+                'estimated_profit_usd': round(estimated_profit_usd, 4),
             })
-    
+
     # Trier par profit net décroissant
     opportunities.sort(key=lambda x: x['net_profit_percentage'], reverse=True)
-    
+
     return opportunities
 
 def calculate_min_amount_out(amount_out_expected: int, slippage_tolerance: float = DEFAULT_SLIPPAGE_TOLERANCE) -> int:
@@ -2793,23 +3000,25 @@ def calculate_min_amount_out(amount_out_expected: int, slippage_tolerance: float
     return max(min_amount, 1)  # Jamais 0
 
 
-def calculate_price_impact(amount_in: int, reserve_in: float, reserve_out: float, decimals_in: int, decimals_out: int) -> float:
+def calculate_price_impact_raw(amount_in: int, reserve_in: float, reserve_out: float, decimals_in: int, decimals_out: int) -> float:
     """
-    Calcule l'impact de prix d'un swap (pour V2)
-    
+    Calcule l'impact de prix d'un swap à partir des réserves brutes (pour V2).
+    Renamed from calculate_price_impact to avoid collision with the pool-depth
+    based calculate_price_impact(pool_data, trade_size_usd) used by arb detection.
+
     Returns:
-        Impact de prix en pourcentage (0.05 = 5%)
+        Ratio de changement de prix (0.05 = 5%)
     """
     if reserve_in <= 0 or reserve_out <= 0:
         return float('inf')
-    
+
     # Convertir en format lisible
     amount_in_formatted = amount_in / (10 ** decimals_in)
-    
+
     # Calculer le nouveau ratio après le swap
-    new_reserve_in = reserve_in + amount_in_formatted
+    new_reserve_in = reserve_in + amount_in_formatted  # noqa: F841
     ratio_change = amount_in_formatted / reserve_in
-    
+
     return ratio_change
 
 #############################################################################################################################################################
@@ -3770,7 +3979,7 @@ def check_sufficient_liquidity(pool_data: dict, amount_in: int, direction: str =
             return False, f"Liquidité insuffisante: {target_reserve:.2f} < {amount_formatted * 10:.2f}"
         
         # Vérifier l'impact de prix
-        price_impact = calculate_price_impact(
+        price_impact = calculate_price_impact_raw(
             amount_in, reserve0, reserve1,
             pool_data['token0']['decimals'],
             pool_data['token1']['decimals']

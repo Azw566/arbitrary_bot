@@ -1,15 +1,19 @@
 """
 BlockListener
 -------------
-Polls eth_blockNumber every ~300ms in a background thread and signals
-an asyncio.Queue whenever a new block is mined.
+Signals an asyncio.Queue whenever a new block is mined.
 
-This gives us block-level scan granularity (~12s on mainnet) while
-keeping the architecture simple — no WebSocket dependency required.
+Transport selection
+-------------------
+- If RPC_URL starts with ``wss://``: uses w3.eth.subscribe('newHeads') over
+  WebSocket — reacts to blocks instantly with no artificial delay.
+- Otherwise: polls eth_blockNumber every ~300ms in a background thread (HTTP
+  fallback, existing behaviour preserved).
 """
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from typing import Optional
@@ -40,22 +44,67 @@ class BlockListener:
     # ------------------------------------------------------------------
 
     def start(self, loop: asyncio.AbstractEventLoop) -> asyncio.Queue:
-        """Start background polling. Returns the queue that receives block numbers."""
+        """Start block listener. Returns the queue that receives block numbers."""
         self._loop    = loop
         self._queue   = asyncio.Queue()
         self._running = True
-        self._thread  = threading.Thread(
-            target=self._poll_loop,
-            daemon=True,
-            name="block-listener",
-        )
+
+        rpc_url = os.getenv("RPC_URL", "")
+        if rpc_url.startswith("wss://"):
+            self._thread = threading.Thread(
+                target=self._ws_loop,
+                daemon=True,
+                name="block-listener-ws",
+            )
+            logger.info("Block listener started (WebSocket subscription)")
+        else:
+            self._thread = threading.Thread(
+                target=self._poll_loop,
+                daemon=True,
+                name="block-listener-poll",
+            )
+            logger.info("Block listener started (HTTP poll interval: %dms)",
+                        int(self._poll_interval * 1000))
+
         self._thread.start()
-        logger.info("Block listener started (poll interval: %dms)", int(self._poll_interval * 1000))
         return self._queue
 
     def stop(self):
         self._running = False
 
+    # ------------------------------------------------------------------
+    # WebSocket path
+    # ------------------------------------------------------------------
+
+    def _ws_loop(self):
+        """Subscribe to newHeads over WebSocket; fall back to polling on error."""
+        try:
+            subscription = self._w3.eth.subscribe("newHeads")
+            logger.debug("WebSocket newHeads subscription active")
+            for header in subscription:
+                if not self._running:
+                    break
+                try:
+                    block_number = int(header["number"], 16) if isinstance(
+                        header.get("number"), str
+                    ) else int(header["number"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    logger.warning("Could not parse block header: %s", exc)
+                    continue
+                if block_number > self._last_block:
+                    self._last_block = block_number
+                    asyncio.run_coroutine_threadsafe(
+                        self._queue.put(block_number), self._loop
+                    )
+                    logger.debug("New block (ws): %d", block_number)
+        except Exception as exc:
+            logger.warning(
+                "WebSocket subscription failed (%s) — falling back to HTTP polling", exc
+            )
+            self._poll_loop()
+
+    # ------------------------------------------------------------------
+    # HTTP polling path (original behaviour)
     # ------------------------------------------------------------------
 
     def _poll_loop(self):

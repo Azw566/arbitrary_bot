@@ -6,6 +6,14 @@ Parallel trade execution with per-token conflict prevention.
 Each opportunity locks the tokens it touches so two trades that share a
 token cannot run simultaneously (which would cause a nonce conflict or
 double-spend).  A semaphore caps the total number of live executions.
+
+MEV Protection
+--------------
+If the environment variable FLASHBOTS_AUTH_KEY is set the executor will
+submit transactions through the Flashbots relay instead of broadcasting
+them to the public mempool, providing front-running protection.
+If the variable is absent the executor falls back to normal RPC submission.
+In dry_run=true mode Flashbots bundles are logged but never actually posted.
 """
 
 import asyncio
@@ -19,6 +27,33 @@ from typing import Dict, Optional, Set
 sys.path.insert(0, os.path.dirname(__file__))
 
 logger = logging.getLogger(__name__)
+
+# Lazily-initialised Flashbots provider (None = use normal RPC)
+_fb_provider = None
+_fb_provider_initialised = False
+
+
+def _get_fb_provider(w3):
+    """Return the module-level Flashbots provider, initialising it once."""
+    global _fb_provider, _fb_provider_initialised
+    if not _fb_provider_initialised:
+        _fb_provider_initialised = True
+        try:
+            from flashbots_relay import get_flashbots_provider
+            _fb_provider = get_flashbots_provider(w3)
+            if _fb_provider:
+                logger.info(
+                    "Flashbots MEV protection ENABLED | relay=%s",
+                    _fb_provider.get("relay_url"),
+                )
+            else:
+                logger.info(
+                    "Flashbots MEV protection DISABLED "
+                    "(set FLASHBOTS_AUTH_KEY to enable)"
+                )
+        except Exception as exc:
+            logger.warning("Could not load flashbots_relay module: %s", exc)
+    return _fb_provider
 
 
 class Executor:
@@ -121,6 +156,12 @@ class Executor:
         label  = f"{pair} | net={net:.4f}%"
 
         if self.dry_run:
+            # In dry-run mode also exercise the Flashbots path (log only)
+            fb = self._try_get_fb_provider()
+            if fb:
+                logger.info("[DRY RUN / FLASHBOTS] %s", label)
+                self._stats["dry_run"] += 1
+                return True
             logger.info("[DRY RUN]  %s", label)
             self._stats["dry_run"] += 1
             return True
@@ -131,6 +172,15 @@ class Executor:
                 contract_address=self.contract_address,
             )
             if result and result.get("success"):
+                # If a signed_tx is available in the result, try Flashbots first
+                signed_tx = result.get("signed_tx")
+                if signed_tx:
+                    submitted = self._submit_via_flashbots(signed_tx, opportunity)
+                    if submitted:
+                        logger.info("[FLASHBOTS] %s", label)
+                        self._stats["executed"] += 1
+                        return True
+                    # Flashbots failed or not configured — fall through to normal path
                 logger.info("[EXECUTED] %s", label)
                 self._stats["executed"] += 1
                 return True
@@ -142,6 +192,37 @@ class Executor:
         except Exception as exc:
             logger.error("[ERROR]    %s — %s", label, exc)
             self._stats["failed"] += 1
+            return False
+
+    def _try_get_fb_provider(self):
+        """Return Flashbots provider if configured, else None."""
+        try:
+            from onchainprice import get_web3
+            w3 = get_web3()
+            return _get_fb_provider(w3)
+        except Exception:
+            return None
+
+    def _submit_via_flashbots(self, signed_tx, opportunity: dict) -> bool:
+        """
+        Attempt to submit a signed transaction via the Flashbots relay.
+
+        Returns True if the bundle was accepted, False if Flashbots is not
+        configured or the submission failed (caller should fall back to normal tx).
+        """
+        fb = self._try_get_fb_provider()
+        if fb is None:
+            return False
+
+        try:
+            from onchainprice import get_web3
+            from flashbots_relay import build_flashbots_bundle, submit_bundle
+            w3 = get_web3()
+            block_number = w3.eth.block_number + 1  # target next block
+            bundle = build_flashbots_bundle(signed_tx, block_number)
+            return submit_bundle(bundle, fb, dry_run=self.dry_run)
+        except Exception as exc:
+            logger.error("Flashbots submission error: %s", exc)
             return False
 
     # ------------------------------------------------------------------
