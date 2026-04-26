@@ -27,6 +27,9 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
+# Aave V3 flash loan premium — deducted from every triangular cycle profit.
+AAVE_FLASH_LOAN_FEE_PCT = 0.09
+
 logger = logging.getLogger(__name__)
 
 
@@ -118,7 +121,7 @@ def find_triangular_opportunities(
 
                 product       = e_ab["rate"] * e_bc["rate"] * e_ca["rate"]
                 gross_pct     = (product - 1) * 100
-                net_profit_pct = gross_pct - gas_cost_pct
+                net_profit_pct = gross_pct - gas_cost_pct - AAVE_FLASH_LOAN_FEE_PCT
 
                 if net_profit_pct <= min_profit_pct:
                     continue
@@ -131,10 +134,11 @@ def find_triangular_opportunities(
                         _leg(e_bc, b, c),
                         _leg(e_ca, c, a),
                     ],
-                    "product":              round(product, 8),
+                    "product":                 round(product, 8),
                     "gross_profit_percentage": round(gross_pct, 6),
-                    "gas_cost_pct":         round(gas_cost_pct, 4),
-                    "net_profit_percentage": round(net_profit_pct, 6),
+                    "gas_cost_pct":            round(gas_cost_pct, 4),
+                    "aave_fee_pct":            AAVE_FLASH_LOAN_FEE_PCT,
+                    "net_profit_percentage":   round(net_profit_pct, 6),
                 })
 
     opportunities.sort(key=lambda x: x["net_profit_percentage"], reverse=True)

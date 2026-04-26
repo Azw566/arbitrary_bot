@@ -40,7 +40,11 @@ CHUNK_SIZE = 100
 
 DRY_RUN=os.getenv('DRY_RUN', 'true')
 
-AAVE_POOL = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2" 
+AAVE_POOL = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+
+# Aave V3 flash loan premium (0.09%) — must be subtracted from every
+# arbitrage opportunity since flash-loan capital is never free.
+AAVE_FLASH_LOAN_FEE_PCT = 0.09
 
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 
@@ -2777,16 +2781,37 @@ def calculate_price_impact(pool_data: dict, trade_size_usd: float) -> float:
     if dex == 'curve':
         return 0.1
 
-    # ── Uniswap V3: estimate from raw on-chain liquidity ─────────────────────
+    # ── Uniswap V3: exact depth from active liquidity at current tick ────────
+    # UniV3 active depth at current price P = price_0_in_1:
+    #   token1 depth (raw units) = L × sqrt(P)
+    #   token0 depth (raw units) = L / sqrt(P)
+    # This is the actual amount of token1 available before exhausting the tick.
     if version == 'V3':
-        liquidity = pool_data.get('liquidity', 0) or 0
-        if liquidity > 0:
-            # Rough liquidity_usd proxy: liquidity ticks encode sqrt(x*y),
-            # so we use a conservative scale factor (1e6 normalises typical values)
-            liquidity_usd = liquidity / 1e6
-            estimated_impact = (trade_size_usd / (liquidity_usd * 0.01)
-                                if liquidity_usd > 0 else 2.0)
-            return min(estimated_impact, 2.0)  # cap at 2%
+        liquidity    = pool_data.get('liquidity', 0) or 0
+        price_0_in_1 = pool_data.get('price_0_in_1', 0.0) or 0.0
+        if liquidity > 0 and price_0_in_1 > 0:
+            ETH_PRICE_FALLBACK = 3500.0
+            try:
+                eth_price = get_eth_price_usd() or ETH_PRICE_FALLBACK
+            except Exception:
+                eth_price = ETH_PRICE_FALLBACK
+            t0_sym = (pool_data.get('token0') or {}).get('symbol', '')
+            t1_sym = (pool_data.get('token1') or {}).get('symbol', '')
+            # Active token1 depth at current tick
+            depth_t1_raw = liquidity * (price_0_in_1 ** 0.5)
+            if t1_sym in ('WETH', 'ETH'):
+                depth_usd = (depth_t1_raw / 1e18) * eth_price
+            elif t1_sym in ('USDC', 'USDT'):
+                depth_usd = depth_t1_raw / 1e6
+            elif t1_sym in ('DAI', 'FRAX', 'LUSD', 'crvUSD'):
+                depth_usd = depth_t1_raw / 1e18
+            elif t0_sym in ('WETH', 'ETH'):
+                # token0 = WETH: use token0 depth = L / sqrt(P)
+                depth_usd = (liquidity / (price_0_in_1 ** 0.5) / 1e18) * eth_price
+            else:
+                return 0.5  # unknown token pair — fall back
+            if depth_usd > 0:
+                return min(trade_size_usd / depth_usd * 100, 100.0)
         return 0.5  # no liquidity data available — fall back to 0.5%
 
     # ── Uniswap V2 / SushiSwap: constant-product formula ─────────────────────
@@ -2826,9 +2851,26 @@ def calculate_optimal_trade_size(buy_pool: dict, sell_pool: dict, max_trade_usd:
     def _pool_optimal(pool: dict) -> float:
         version = pool.get('version', 'V2')
         if version == 'V3':
-            liquidity = pool.get('liquidity', 0) or 0
-            tvl_estimate = liquidity / 1e6
-            raw = tvl_estimate * 0.01
+            liquidity    = pool.get('liquidity', 0) or 0
+            price_0_in_1 = pool.get('price_0_in_1', 0.0) or 0.0
+            if liquidity > 0 and price_0_in_1 > 0:
+                t0_sym = (pool.get('token0') or {}).get('symbol', '')
+                t1_sym = (pool.get('token1') or {}).get('symbol', '')
+                depth_t1_raw = liquidity * (price_0_in_1 ** 0.5)
+                if t1_sym in ('WETH', 'ETH'):
+                    depth_usd = (depth_t1_raw / 1e18) * eth_price
+                elif t1_sym in ('USDC', 'USDT'):
+                    depth_usd = depth_t1_raw / 1e6
+                elif t1_sym in ('DAI', 'FRAX', 'LUSD', 'crvUSD'):
+                    depth_usd = depth_t1_raw / 1e18
+                elif t0_sym in ('WETH', 'ETH'):
+                    depth_usd = (liquidity / (price_0_in_1 ** 0.5) / 1e18) * eth_price
+                else:
+                    depth_usd = 0
+                # Optimal = 1% of active pool depth at current tick
+                raw = depth_usd * 0.01 if depth_usd > 0 else max_trade_usd
+            else:
+                raw = max_trade_usd
         else:
             # V2, Sushi, Curve — use the WETH reserve as USD proxy
             t0 = pool.get('token0', {}) or {}
@@ -2882,7 +2924,7 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
     # real opportunity (real arb is typically <5% even on illiquid tokens).
     MAX_GROSS_SPREAD = 50.0  # %
     # Minimum effective trade size — filters out dust positions
-    MIN_TRADE_SIZE_USD = 1000.0
+    MIN_TRADE_SIZE_USD = 500.0
 
     def _pool_has_liquidity(pool: dict) -> bool:
         version = pool.get('version', '')
@@ -2958,7 +3000,7 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
         slippage_sell = calculate_price_impact(max_price_pool, optimal_trade_usd)
         total_slippage_pct = slippage_buy + slippage_sell
 
-        net_profit = percentage_diff - total_fees - adjusted_gas_pct - total_slippage_pct
+        net_profit = percentage_diff - total_fees - adjusted_gas_pct - total_slippage_pct - AAVE_FLASH_LOAN_FEE_PCT
         estimated_profit_usd = (net_profit / 100.0) * optimal_trade_usd
 
         if net_profit > min_profit_percentage:
@@ -2970,6 +3012,7 @@ def find_arbitrage_opportunities(pool_data_list: List[Dict], min_profit_percenta
                 'total_fees_percentage': total_fees,
                 'gas_cost_pct': round(adjusted_gas_pct, 4),
                 'slippage_pct': round(total_slippage_pct, 4),
+                'aave_fee_pct': AAVE_FLASH_LOAN_FEE_PCT,
                 'net_profit_percentage': round(net_profit, 6),
                 'optimal_trade_size_usd': round(optimal_trade_usd, 2),
                 'estimated_profit_usd': round(estimated_profit_usd, 4),

@@ -219,6 +219,14 @@ class Bot:
         logger.info("\n%s\n", self._pair_manager.summary())
         self.running = True
 
+        # ── MEV protection check ─────────────────────────────────────────────
+        if not os.getenv("FLASHBOTS_AUTH_KEY"):
+            logger.warning(
+                "FLASHBOTS_AUTH_KEY is not set — transactions will be broadcast "
+                "to the public mempool and are vulnerable to sandwich attacks. "
+                "Set this env var before running with dry_run=false on mainnet."
+            )
+
         # Start block listener — returns an asyncio.Queue
         block_queue = self._block_listener.start(loop)
 
@@ -331,6 +339,17 @@ class Bot:
                         self._thread_pool,
                         lambda: self._check_pool_health(_pd, _pa2, _bn2),
                     )
+
+                # ── Seed live ETH price into the block cache ─────────────
+                # ACTUAL_PRICES is empty at startup, so get_eth_price_usd()
+                # always fell back to the hardcoded 3500.0. We now extract the
+                # price directly from pool_data (WETH/stablecoin pool) and
+                # pre-populate _block_cache so that estimate_gas_cost_* picks
+                # it up without touching ACTUAL_PRICES at all.
+                live_eth = _extract_eth_price_from_pool_data(pool_data)
+                if live_eth:
+                    _block_cache["eth_price"] = live_eth
+                    _block_cache["block"]     = block_number  # mark cache as fresh
 
                 # ── Estimate gas cost for this block (absolute USD value) ──
                 _bn = block_number
@@ -614,6 +633,31 @@ class Bot:
 # ---------------------------------------------------------------------------
 # Updated find_arbitrage_opportunities wrapper — passes gas + slippage through
 # ---------------------------------------------------------------------------
+
+def _extract_eth_price_from_pool_data(pool_data: list) -> float:
+    """
+    Scan pool_data for a WETH/stable pair and return the live ETH/USD price.
+    Returns 0.0 if no suitable pool is found.
+
+    This avoids relying on ACTUAL_PRICES (which is empty at startup) for gas
+    cost estimation.  Any WETH↔USDC/USDT/DAI pool will do; we take the first
+    one with a plausible price (> $100 sanity check).
+    """
+    WETH_SYMS  = {"WETH", "ETH"}
+    STABLE_SYMS = {"USDC", "USDT", "DAI"}
+    for pool in pool_data:
+        t0   = pool.get("token0", {})
+        t1   = pool.get("token1", {})
+        sym0 = t0.get("symbol", "")
+        sym1 = t1.get("symbol", "")
+        p01  = pool.get("price_0_in_1", 0.0) or 0.0
+        p10  = pool.get("price_1_in_0", 0.0) or 0.0
+        if sym0 in WETH_SYMS and sym1 in STABLE_SYMS and p01 > 100:
+            return p01
+        if sym1 in WETH_SYMS and sym0 in STABLE_SYMS and p10 > 100:
+            return p10
+    return 0.0
+
 
 def _find_arbitrage_opportunities_with_gas(
     pool_data,

@@ -95,7 +95,8 @@ class TestTwoWayArbitrage:
         Two liquid V3 WETH/USDC pools with a 1% gross spread.
             fee1 = 0.05%, fee2 = 0.30%, combined = 0.35%
             slippage at liq=1e14 ≈ 0.10% (both pools, capped at 2% each)
-            net ≈ 1.0 - 0.35 - 0.10 = 0.55% > min_profit_pct=0.05 → detected.
+            Aave flash-loan fee = 0.09%
+            net ≈ 1.0 - 0.35 - 0.10 - 0.09 = 0.46% > min_profit_pct=0.05 → detected.
         """
         cheap     = _v3("0xCHEAP",     2000.0, fee_pct=0.05, liquidity=LIQUID_V3)
         expensive = _v3("0xEXPENSIVE", 2020.0, fee_pct=0.30, liquidity=LIQUID_V3)
@@ -284,7 +285,7 @@ class TestTwoWayArbitrage:
         REQUIRED_KEYS = {
             "pair", "buy_pool", "sell_pool",
             "gross_profit_percentage", "total_fees_percentage",
-            "gas_cost_pct", "slippage_pct",
+            "gas_cost_pct", "slippage_pct", "aave_fee_pct",
             "net_profit_percentage",
             "optimal_trade_size_usd", "estimated_profit_usd",
         }
@@ -409,7 +410,7 @@ class TestTriangularArbitrage:
         REQUIRED = {
             "type", "pair", "legs",
             "product", "gross_profit_percentage",
-            "gas_cost_pct", "net_profit_percentage",
+            "gas_cost_pct", "aave_fee_pct", "net_profit_percentage",
         }
         opps = find_triangular_opportunities(
             triangular_profitable_pools,

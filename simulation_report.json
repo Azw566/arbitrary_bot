@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "timestamp": "2026-04-25T13:44:39.219702+00:00",
+    "duration_s": 120.4,
+    "pool_count": 92,
+    "blocks_scanned": 11,
+    "avg_fetch_s": 1.761,
+    "avg_gas_gwei": 0.8778,
+    "avg_eth_price_usd": 2317.55,
+    "avg_tx_cost_usd": 0.8137
+  },
+  "summary": {
+    "total_opportunities": 0,
+    "two_way": 0,
+    "triangular": 0,
+    "pairs_with_opps": 0,
+    "opps_per_block": 0.0,
+    "profit_distribution": {
+      "0.01-0.05%": 0,
+      "0.05-0.10%": 0,
+      "0.10-0.25%": 0,
+      "0.25-0.50%": 0,
+      ">0.50%": 0
+    }
+  },
+  "projections": {
+    "actual_duration_s": 120.4,
+    "scale_to_24h": 717.34,
+    "daily_opps_est": 0,
+    "total_sim_profit_usd": 0,
+    "daily_rev_100pct_usd": 0.0,
+    "daily_rev_flashbots_usd": 0.0,
+    "daily_rev_public_usd": 0.0,
+    "monthly_rev_flashbots": 0.0
+  },
+  "top_10_opportunities": [],
+  "by_pair": {}
+}

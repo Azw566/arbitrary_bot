@@ -25,7 +25,7 @@ pairs:
   #                  competition. Spreads can be large during volatility.
   #   balanced     — defi_bluechip + mid_cap. Best risk/reward starting point.
   #   all          — Every pair in the list.
-  active_bundle: "balanced"
+  active_bundle: "all"
 
   # Used only when mode: manual
   whitelist:
@@ -299,7 +299,7 @@ pairs:
       pools:
         - { dex: UniV3, version: V3, address: "0xd340B57aaCDD10F96FC1CF10e15921936F41E29c" }  # 0.01%
         - { dex: UniV3, version: V3, address: "0x109830a1AAaD605BbF02a9dFA7a0DF6e12Dfec5F" }  # 0.05%
-        - { dex: UniV2, version: V2, address: "0x3F3eE751Ab00246cB0beEc2e904ef51e18Ac4D77" }
+        - { dex: UniV2, version: V2, address: "0x3F3eE751Ab00246cB0beEc2e904ef51e18Ac4D77" }  # UniV2
 
     - pair: "rETH/WETH"
       pools:
@@ -309,6 +309,7 @@ pairs:
     - pair: "cbETH/WETH"
       pools:
         - { dex: UniV3, version: V3, address: "0x840DEEef2f115Cf50DA625F7368C24af6fE74410" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x631e93A0fB06B5f3EEa927DD4d27ae38E44A4E01" }  # 0.30%
 
     # ════════════════════════════════════════════════════════
     # BUNDLE: niche
@@ -324,6 +325,7 @@ pairs:
     - pair: "BLUR/WETH"
       pools:
         - { dex: UniV3, version: V3, address: "0x824A30F2984F9013F2C8D0a29C0a3Cc5fD5c0673" }  # 0.30%
+        - { dex: UniV3, version: V3, address: "0x6f41040B9E098c2aC4b88e27b50d4E9AB486781b" }  # 1.00%
 
     - pair: "LOOKS/WETH"
       pools:
@@ -333,18 +335,22 @@ pairs:
     - pair: "RPL/WETH"
       pools:
         - { dex: UniV3, version: V3, address: "0xe42318eA3b998e8355a3Da364EB9D48eC725Eb45" }  # 0.30%
+        - { dex: UniV2, version: V2, address: "0x70EA56E46266f0137BAc6B75710e3546f47C855D" }  # UniV2
 
     - pair: "FRAX/USDC"
       pools:
         - { dex: UniV3, version: V3, address: "0xc63B0708E2F7e69CB8A1df0e1389A98C35A76D52" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x36696169C63e42cd08ce11f5deeBbCeBae652050" }  # 0.01%
 
     - pair: "LUSD/USDC"
       pools:
         - { dex: UniV3, version: V3, address: "0x4e0924d3a751bE199C426d52fb1f2337fa96f736" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x9663f2CA0454accad3e094448Ea6f77443880454" }  # 0.30%
 
     - pair: "crvUSD/USDC"
       pools:
         - { dex: UniV3, version: V3, address: "0x73Ea3d8ba3d7380201b270ec504B33Ed5e478542" }  # 0.05%
+        - { dex: UniV3, version: V3, address: "0x8B06e4B5F2C2104Fc2a6507c01cbCa29A01B7a7a" }  # 0.01%
 
 
 # ============================================================
@@ -361,7 +367,7 @@ monitoring:
 execution:
   dry_run: true               # true = log only | false = send real on-chain transactions
   strategy: "two_way"         # Active strategy: two_way | triangular | flash_loan
-  min_profit_pct: 0.05        # Minimum net profit % required to trigger execution
+  min_profit_pct: 0.01        # Minimum net profit % required to trigger execution
   max_gas_gwei: 50            # Skip execution if gas price exceeds this (gwei)
   gas_reserve_eth: 0.05       # ETH kept aside for gas costs
   slippage_tolerance_pct: 0.5 # Maximum acceptable slippage %

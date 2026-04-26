@@ -383,7 +383,8 @@ def sample_opportunity(pool_v3_weth_usdc_univ3, pool_v3_weth_usdc_expensive):
         "total_fees_percentage":   0.35,
         "slippage_pct":            0.10,
         "gas_cost_pct":            0.0,
-        "net_profit_percentage":   0.55,
+        "aave_fee_pct":            0.09,
+        "net_profit_percentage":   0.46,
         "optimal_trade_size_usd":  50000.0,
-        "estimated_profit_usd":    275.0,
+        "estimated_profit_usd":    230.0,
     }
