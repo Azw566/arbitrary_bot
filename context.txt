@@ -1,5 +1,5 @@
 ================================================================================
-MULTI-DEX ARBITRAGE BOT — AGENT CONTEXT FILE
+MULTI-DEX ARBITRAGE BOT — CONTEXT FILE
 Generated: 2026-03-23 | For use by future Claude agents working on this repo
 ================================================================================
 
